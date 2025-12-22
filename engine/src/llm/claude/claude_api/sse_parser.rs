@@ -157,13 +157,13 @@ impl Parser {
         let mut data = String::new();
 
         for line in text.lines() {
-            if line.starts_with("event: ") {
-                event_type = Some(line["event: ".len()..].to_string());
-            } else if line.starts_with("data: ") {
+            if let Some(prefix) = line.strip_prefix("event: ") {
+                event_type = Some(prefix.to_string());
+            } else if let Some(prefix) = line.strip_prefix("data: ") {
                 if !data.is_empty() {
                     data.push('\n');
                 }
-                data.push_str(&line["data: ".len()..]);
+                data.push_str(prefix);
             } else {
                 bail!("Unexpected line while parsing SSE event {line}\n\nEvent:\n{text}");
             }
@@ -202,7 +202,7 @@ impl Event {
                 _ => None,
             }
         })()
-        .unwrap_or_else(|| Event::Unknown(raw))
+        .unwrap_or(Event::Unknown(raw))
     }
 }
 

@@ -11,8 +11,7 @@ async fn main() -> Result<()> {
     color_eyre::install().unwrap();
 
     let token = std::env::args()
-        .skip(1)
-        .next()
+        .nth(1)
         .ok_or(eyre!("Need token as first cli arg"))?;
 
     let mut claude = Claude::new(token, "claude-sonnet-4-5".into());

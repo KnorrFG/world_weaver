@@ -65,7 +65,7 @@ pub fn send_request_stream(
                         Err(eyre!("Unexpected role in received message:\n{msg_start:#?}"))?;
                     }
 
-                    let usage = msg_start.message.usage.clone();
+                    let usage = msg_start.message.usage;
                     input_tokens += usage.input_tokens.ok_or(eyre!("Msg didn't contain input tokens:\n{msg_start:#?}"))?;
                     output_tokens += usage.output_tokens.ok_or(eyre!("Msg didn't contain output tokens:\n{msg_start:#?}"))?;
                 }

@@ -213,26 +213,26 @@ impl GameData {
                 match input {
                     TurnInput::PlayerAction(a) => {
                         user_message.push_str("\n# player action\n");
-                        user_message.push_str(&a);
+                        user_message.push_str(a);
                     }
                     TurnInput::GmInstruction(i) => {
                         user_message.push_str("\n# gm command\n");
-                        user_message.push_str(&i);
+                        user_message.push_str(i);
                     }
                     TurnInput::Both {
                         player_action,
                         gm_instruction,
                     } => {
                         user_message.push_str("\n# player action\n");
-                        user_message.push_str(&player_action);
+                        user_message.push_str(player_action);
                         user_message.push_str("\n# gm command\n");
-                        user_message.push_str(&gm_instruction);
+                        user_message.push_str(gm_instruction);
                     }
                 }
 
                 if let Some(secret_info) = last_secret_info {
                     user_message.push_str("\n# last secret info\n");
-                    user_message.push_str(&secret_info);
+                    user_message.push_str(secret_info);
                 }
 
                 [
@@ -303,15 +303,11 @@ impl TryFrom<OutputMessage> for TurnOutput {
             bail!("No <<<EOO>>> in output");
         };
 
-        let output = output.trim().to_string();
-
         let parts = tail.split("<<<EOS>>>").collect::<Vec<&str>>();
         let [secret, tail] = parts[..] else {
             bail!("No in <<<EOS>>> in output");
         };
-        let secret = secret.trim().to_string();
 
-        // The remaining part contains the proposed actions separated by <<<EOA>>>
         let proposed_next_actions: Vec<String> = tail
             .split("<<<EOA>>>")
             .map(|s| s.trim().to_string())
@@ -325,8 +321,8 @@ impl TryFrom<OutputMessage> for TurnOutput {
         );
 
         Ok(TurnOutput {
-            text: output,
-            secret_info: secret,
+            text: output.trim().to_string(),
+            secret_info: secret.trim().to_string(),
             proposed_next_actions: proposed_next_actions.try_into().unwrap(),
             input_tokens: value.input_tokens,
             output_tokens: value.output_tokens,

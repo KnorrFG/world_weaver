@@ -36,14 +36,12 @@ impl StreamFinder {
             } else {
                 ProcessCharOutcome::PrefixMatch
             }
+        } else if ch == self.target[0] {
+            self.current_pos = 1;
+            ProcessCharOutcome::PrefixReMatch
         } else {
-            if ch == self.target[0] {
-                self.current_pos = 1;
-                ProcessCharOutcome::PrefixReMatch
-            } else {
-                self.current_pos = 0;
-                ProcessCharOutcome::Mismatch
-            }
+            self.current_pos = 0;
+            ProcessCharOutcome::Mismatch
         }
     }
 
