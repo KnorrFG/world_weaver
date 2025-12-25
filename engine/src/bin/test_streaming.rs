@@ -21,6 +21,7 @@ async fn main() -> Result<()> {
             content: "Explain Rust futures by going way too deep".into(),
         }],
         max_tokens: 300,
+        system: None,
     });
 
     pin!(stream);

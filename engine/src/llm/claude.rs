@@ -4,10 +4,11 @@ use super::{LLM, Request};
 
 mod claude_api;
 
+#[derive(Clone)]
 pub struct Claude {
-    pub(crate) api_key: String,
-    pub(crate) model: String,
-    pub(crate) client: reqwest::Client,
+    pub api_key: String,
+    pub model: String,
+    pub client: reqwest::Client,
 }
 
 impl Claude {
@@ -23,6 +24,7 @@ impl Claude {
 impl LLM for Claude {
     fn send_request_stream<'a>(&'a mut self, req: Request) -> LLMStream<'a> {
         let Request {
+            system,
             messages,
             max_tokens,
         } = req;
@@ -31,6 +33,7 @@ impl LLM for Claude {
             api_key: self.api_key.clone(),
             data: claude_api::RequestBody {
                 model: self.model.clone(),
+                system,
                 messages,
                 max_tokens,
                 stream: true,
@@ -38,5 +41,9 @@ impl LLM for Claude {
         };
 
         Box::pin(claude_api::send_request_stream(claude_req, &self.client))
+    }
+
+    fn clone(&self) -> Box<dyn LLM + Send + 'static> {
+        Box::new(Clone::clone(self))
     }
 }

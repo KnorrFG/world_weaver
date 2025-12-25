@@ -1,7 +1,10 @@
 use std::time::Duration;
 
 use async_stream::try_stream;
-use color_eyre::{Result, eyre::eyre};
+use color_eyre::{
+    Result,
+    eyre::{bail, eyre},
+};
 use log::{debug, info};
 use reqwest::header::{self, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -24,6 +27,7 @@ pub struct Request {
 pub struct RequestBody {
     pub model: String,
     pub messages: Vec<InputMessage>,
+    pub system: Option<String>,
     pub max_tokens: usize,
     pub stream: bool,
 }
@@ -41,91 +45,99 @@ pub fn send_request_stream(
             .header("x-api-key", &req.api_key)
             .header("anthropic-version", HeaderValue::from_static("2023-06-01"))
             .header(header::ACCEPT, HeaderValue::from_static("text/event-stream"));
+
         debug!("request: {request:#?}");
-        let stream = request
+        debug!("Json-data: {}", serde_json::to_string(&req.data).unwrap());
+        let res = request
             .send()
-            .await?
-            .error_for_status()?
-            .bytes_stream();
+            .await?;
 
-        let mut parser = sse_parser::Parser::default();
-        let mut input_tokens = 0;
-        let mut output_tokens = 0;
-        let mut text = String::new();
-        let mut first_msg_complete = false;
+         if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            Err(eyre!("Anthropic error {}: {}", status, body))?;
+        } else {
+            let stream = res.bytes_stream();
 
-        let mut process_event = |ev| -> Result<Option<ResponseFragment>> {
-            use sse_parser::Event::*;
-            match ev {
-                MessageStart(msg_start) => {
-                    if first_msg_complete {
-                        Err(eyre!("Unexpected second message"))?;
-                    }
-                    if msg_start.message.role != "assistant" {
-                        Err(eyre!("Unexpected role in received message:\n{msg_start:#?}"))?;
-                    }
+            let mut parser = sse_parser::Parser::default();
+            let mut input_tokens = 0;
+            let mut output_tokens = 0;
+            let mut text = String::new();
+            let mut first_msg_complete = false;
 
-                    let usage = msg_start.message.usage;
-                    input_tokens += usage.input_tokens.ok_or(eyre!("Msg didn't contain input tokens:\n{msg_start:#?}"))?;
-                    output_tokens += usage.output_tokens.ok_or(eyre!("Msg didn't contain output tokens:\n{msg_start:#?}"))?;
-                }
+            let mut process_event = |ev| -> Result<Option<ResponseFragment>> {
+                use sse_parser::Event::*;
+                match ev {
+                    MessageStart(msg_start) => {
+                        if first_msg_complete {
+                            Err(eyre!("Unexpected second message"))?;
+                        }
+                        if msg_start.message.role != "assistant" {
+                            Err(eyre!("Unexpected role in received message:\n{msg_start:#?}"))?;
+                        }
 
-                ContentBlockStart(block) => {
-                    if block.content_block.block_type != "text" {
-                        Err(eyre!("unexpected block type: {}", block.content_block.block_type))?;
-                    }
-
-                    if !block.content_block.text.is_empty() {
-                        text.push_str(&block.content_block.text);
-                        return Ok(Some(ResponseFragment::TextDelta(block.content_block.text)))
-                    }
-                }
-
-                ContentBlockDelta(delta) => {
-                    if delta.delta.delta_type != "text_delta" {
-                        Err(eyre!("unexpected delta type: {}", delta.delta.delta_type))?;
+                        let usage = msg_start.message.usage;
+                        input_tokens += usage.input_tokens.ok_or(eyre!("Msg didn't contain input tokens:\n{msg_start:#?}"))?;
+                        output_tokens += usage.output_tokens.ok_or(eyre!("Msg didn't contain output tokens:\n{msg_start:#?}"))?;
                     }
 
-                    text.push_str(&delta.delta.text);
-                    return Ok(Some(ResponseFragment::TextDelta(delta.delta.text)));
+                    ContentBlockStart(block) => {
+                        if block.content_block.block_type != "text" {
+                            Err(eyre!("unexpected block type: {}", block.content_block.block_type))?;
+                        }
+
+                        if !block.content_block.text.is_empty() {
+                            text.push_str(&block.content_block.text);
+                            return Ok(Some(ResponseFragment::TextDelta(block.content_block.text)))
+                        }
+                    }
+
+                    ContentBlockDelta(delta) => {
+                        if delta.delta.delta_type != "text_delta" {
+                            Err(eyre!("unexpected delta type: {}", delta.delta.delta_type))?;
+                        }
+
+                        text.push_str(&delta.delta.text);
+                        return Ok(Some(ResponseFragment::TextDelta(delta.delta.text)));
+                    }
+
+                    MessageDelta(delta) => {
+                        output_tokens += delta.usage.output_tokens.ok_or(eyre!("MessageDelta missing output tokens"))?;
+                    }
+
+                    ContentBlockStop(_) | Ping=> {
+                    }
+
+                    MessageStop => {
+                        first_msg_complete = true;
+                        return Ok(Some(ResponseFragment::MessageComplete(OutputMessage { input_tokens, output_tokens, text: text.clone() })))
+                    }
+
+                    Error(err) => {
+                        Err(err)?;
+                    }
+
+                    Unknown(raw_event) => {
+                        info!("Unknown event:\n{raw_event:#?}");
+                    }
                 }
 
-                MessageDelta(delta) => {
-                    output_tokens += delta.usage.output_tokens.ok_or(eyre!("MessageDelta missing output tokens"))?;
-                }
+                Ok(None)
+            };
 
-                ContentBlockStop(_) | Ping=> {
-                }
-
-                MessageStop => {
-                    first_msg_complete = true;
-                    return Ok(Some(ResponseFragment::MessageComplete(OutputMessage { input_tokens, output_tokens, text: text.clone() })))
-                }
-
-                Error(err) => {
-                    Err(err)?;
-                }
-
-                Unknown(raw_event) => {
-                    info!("Unknown event:\n{raw_event:#?}");
+            for await chunk in stream {
+                for ev in parser.process(chunk?)? {
+                    if let Some(fragment) = process_event(ev)? {
+                        yield fragment;
+                    }
                 }
             }
 
-            Ok(None)
-        };
-
-        for await chunk in stream {
-            for ev in parser.process(chunk?)? {
-                if let Some(fragment) = process_event(ev)? {
+            if let Some(ev) = parser.parse_remaining() {
+                // somehow, try_stream puts us back to Rust 2021
+                if let Some(fragment) = process_event(ev)?{
                     yield fragment;
                 }
-            }
-        }
-
-        if let Some(ev) = parser.parse_remaining() {
-            // somehow, try_stream puts us back to Rust 2021
-            if let Some(fragment) = process_event(ev)?{
-                yield fragment;
             }
         }
 
@@ -144,6 +156,7 @@ mod test {
     fn request_serialization() {
         let body = RequestBody {
             model: "model".into(),
+            system: None,
             messages: vec![
                 InputMessage {
                     role: Role::System,

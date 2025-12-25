@@ -7,6 +7,7 @@ use color_eyre::Result;
 
 pub trait LLM {
     fn send_request_stream(&mut self, req: Request) -> LLMStream<'_>;
+    fn clone(&self) -> Box<dyn LLM + Send + 'static>;
 }
 
 pub type LLMStream<'a> = Pin<Box<dyn Stream<Item = Result<ResponseFragment>> + Send + 'a>>;
@@ -18,6 +19,7 @@ pub enum ResponseFragment {
 }
 
 pub struct Request {
+    pub system: Option<String>,
     pub messages: Vec<InputMessage>,
     pub max_tokens: usize,
 }

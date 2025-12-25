@@ -11,6 +11,7 @@ use color_eyre::{
     Result,
     eyre::{bail, ensure},
 };
+use log::warn;
 use serde::{Deserialize, Serialize};
 use tokio::{pin, sync::oneshot};
 use tokio_stream::{Stream, StreamExt};
@@ -22,16 +23,29 @@ pub struct Game {
     data: GameData,
 }
 
+impl Clone for Game {
+    fn clone(&self) -> Self {
+        Self {
+            llm: self.llm.clone(),
+            data: self.data.clone(),
+        }
+    }
+}
+
 impl Game {
-    pub fn new(
+    pub fn load(llm: LLMBox, data: GameData) -> Self {
+        Game { llm, data }
+    }
+
+    pub fn try_new(
         llm: LLMBox,
         world_description: WorldDescription,
-        player_character: &str,
+        player_character: String,
     ) -> Result<Self> {
         ensure!(
             world_description
                 .pc_descriptions
-                .contains_key(player_character),
+                .contains_key(&player_character),
             "Invalid character name: {player_character}"
         );
 
@@ -39,19 +53,20 @@ impl Game {
             llm,
             data: GameData {
                 world_description,
-                pc: player_character.into(),
+                pc: player_character,
                 summaries: vec![],
                 turn_data: vec![],
             },
         })
     }
 
-    pub fn advance<'a>(&'a mut self, input: TurnInput) -> AdvanceResult<'a> {
+    pub fn send_to_llm(&self, input: TurnInput) -> AdvanceResult {
         let (tx, rx) = oneshot::channel();
+        let req = self.data.construct_request(&input);
+        let mut llm = self.llm.clone();
         let stream = try_stream! {
-            let req = self.data.construct_request();
             let output = {
-                let stream = self.llm.send_request_stream(req);
+                let stream = llm.send_request_stream(req);
                 let mut streaming = true;
                 let mut finder = StreamFinder::new("<<<EOO>>>");
 
@@ -78,15 +93,6 @@ impl Game {
                             }
                             ResponseFragment::MessageComplete(m) => {
                                 let output = TurnOutput::try_from(m)?;
-                                let turn_data = TurnData {
-                                    summary_before_input: {
-                                        let len = self.data.summaries.len();
-                                        if len > 0 { Some(len - 1)} else {None}
-                                    },
-                                    input,
-                                    output: output.clone()
-                                };
-                                self.data.turn_data.push(turn_data);
                                 break output;
                             }
                         }
@@ -97,7 +103,6 @@ impl Game {
                 stream.try_next().await?;
                 output
             };
-            self.update_summary().await?;
             _ = tx.send(output);
 
         };
@@ -108,11 +113,42 @@ impl Game {
         }
     }
 
-    async fn update_summary(&mut self) -> Result<()> {
-        todo!()
+    pub fn get_data(&self) -> &GameData {
+        &self.data
+    }
+
+    pub fn update(&mut self, input: TurnInput, output: TurnOutput) -> Result<()> {
+        let turn_data = TurnData {
+            summary_before_input: {
+                let len = self.data.summaries.len();
+                if len > 0 { Some(len - 1) } else { None }
+            },
+            input,
+            output: output.clone(),
+        };
+        self.data.turn_data.push(turn_data);
+        warn!("Summary not implemented");
+        Ok(())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.turn_data.is_empty()
+    }
+
+    pub fn start_or_get_last_output<'a>(&'a mut self) -> StartResultOrOutput {
+        if let Some(turn) = self.data.turn_data.last() {
+            StartResultOrOutput::Output(turn.output.clone())
+        } else {
+            let input = TurnInput::PlayerAction(self.data.world_description.init_action.clone());
+            StartResultOrOutput::StartResult(self.send_to_llm(input.clone()), input)
+        }
     }
 }
 
+pub enum StartResultOrOutput {
+    StartResult(AdvanceResult, TurnInput),
+    Output(TurnOutput),
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameData {
     world_description: WorldDescription,
@@ -122,7 +158,7 @@ pub struct GameData {
 }
 
 impl GameData {
-    fn construct_request(&self) -> Request {
+    fn construct_request(&self, input: &TurnInput) -> Request {
         let player = &self.pc;
         let world_description = &self.world_description.main_description;
         let last_summary = self.summaries.last();
@@ -140,7 +176,7 @@ impl GameData {
            My input will be structured like this: The turn number, followed by
            three sections, all optional, like this:
 
-           ```
+           --- START EXAMPLE ---
             turn *N*
             # player action
             *whatever I want {player} to do or say.*
@@ -148,7 +184,7 @@ impl GameData {
             *whatever I want you to respect while generating the next message.*
             # last secret info
             * The secret Info you generated for yourself last turn*
-           ```
+           --- END EXAMPLE ---
 
            The player action means: what ever I write here is what {player} does or says.
            When {player} is in a
@@ -166,7 +202,7 @@ impl GameData {
            to the input, which is the third section.
 
            The output should have the following structure:
-           ```
+           --- START EXAMPLE ---
            *The output*: text that is displayed to me, this should be between 300 and 2000 words
 
            <<<EOO>>>
@@ -178,7 +214,7 @@ impl GameData {
            Proposed Action 2
            <<<EOA>>>
            Proposed Action 3
-           ```
+           --- END EXAMPLE ---
 
            The above example is explanatory, you are supposed to replace all text within it,
            except for <<<EOO>>>, <<<EOS>>> and <<<EOA>>>, which are parsing delimiters and
@@ -190,15 +226,15 @@ impl GameData {
 
            Here is the description of the world the story plays in, and some some
            instructions about the style:
-           ```
+           --- START DESCRIPTION ---
            {world_description} 
-           ```
+           --- END DESCRIPTION ---
 
            Here is a summary of everthing that has happened up till turn {summary_turn}:
 
-           ```
+           --- START SUMMARY ---
            {summary} 
-           ```
+           --- END SUMMARY ---
         "#};
 
         let messages = (0..self.turn_data.len())
@@ -208,28 +244,12 @@ impl GameData {
             .flat_map(|i| {
                 let mut user_message = format!("turn {i}");
                 let TurnData { input, output, .. } = &self.turn_data[i];
-                let last_secret_info = self.turn_data.get(i - 1).map(|td| &td.output.secret_info);
+                let last_secret_info = self
+                    .turn_data
+                    .get(i.saturating_sub(1))
+                    .map(|td| &td.output.secret_info);
 
-                match input {
-                    TurnInput::PlayerAction(a) => {
-                        user_message.push_str("\n# player action\n");
-                        user_message.push_str(a);
-                    }
-                    TurnInput::GmInstruction(i) => {
-                        user_message.push_str("\n# gm command\n");
-                        user_message.push_str(i);
-                    }
-                    TurnInput::Both {
-                        player_action,
-                        gm_instruction,
-                    } => {
-                        user_message.push_str("\n# player action\n");
-                        user_message.push_str(player_action);
-                        user_message.push_str("\n# gm command\n");
-                        user_message.push_str(gm_instruction);
-                    }
-                }
-
+                input.write_to_user_msg_string(&mut user_message);
                 if let Some(secret_info) = last_secret_info {
                     user_message.push_str("\n# last secret info\n");
                     user_message.push_str(secret_info);
@@ -241,12 +261,20 @@ impl GameData {
                 ]
             });
 
-        let messages = iter::once(InputMessage::system(system_message))
-            .chain(messages)
+        let mut latest_message = String::new();
+        input.write_to_user_msg_string(&mut latest_message);
+        if let Some(last_turn) = self.turn_data.last() {
+            latest_message.push_str("\n# last secret info\n");
+            latest_message.push_str(&last_turn.output.secret_info);
+        }
+
+        let messages = messages
+            .chain([InputMessage::user(latest_message)])
             .collect();
         Request {
             messages,
             max_tokens: 3000,
+            system: Some(system_message),
         }
     }
 }
@@ -265,18 +293,18 @@ pub struct TurnData {
     output: TurnOutput,
 }
 
-pub struct AdvanceResult<'a> {
-    pub text_stream: Pin<Box<dyn Stream<Item = Result<String>> + Send + 'a>>,
-    pub round_output: Pin<Box<dyn Future<Output = Result<TurnOutput>> + 'a>>,
+pub struct AdvanceResult {
+    pub text_stream: Pin<Box<dyn Stream<Item = Result<String>> + Send>>,
+    pub round_output: Pin<Box<dyn Future<Output = Result<TurnOutput>> + Send>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnOutput {
-    text: String,
-    secret_info: String,
-    proposed_next_actions: [String; N_PROPOSED_OPTIONS],
-    input_tokens: usize,
-    output_tokens: usize,
+    pub text: String,
+    pub secret_info: String,
+    pub proposed_next_actions: [String; N_PROPOSED_OPTIONS],
+    pub input_tokens: usize,
+    pub output_tokens: usize,
 }
 
 impl TurnOutput {
@@ -314,16 +342,20 @@ impl TryFrom<OutputMessage> for TurnOutput {
             .collect();
 
         ensure!(
-            proposed_next_actions.len() == N_PROPOSED_OPTIONS,
-            "Expected {} proposed actions, found {}",
+            proposed_next_actions.len() >= N_PROPOSED_OPTIONS,
+            "Expected {} proposed actions, found {} Message: \n{}",
             N_PROPOSED_OPTIONS,
-            proposed_next_actions.len()
+            proposed_next_actions.len(),
+            value.text
         );
 
         Ok(TurnOutput {
             text: output.trim().to_string(),
             secret_info: secret.trim().to_string(),
-            proposed_next_actions: proposed_next_actions.try_into().unwrap(),
+            proposed_next_actions: proposed_next_actions[..N_PROPOSED_OPTIONS]
+                .to_vec()
+                .try_into()
+                .unwrap(),
             input_tokens: value.input_tokens,
             output_tokens: value.output_tokens,
         })
@@ -340,8 +372,33 @@ pub enum TurnInput {
     },
 }
 
+impl TurnInput {
+    pub fn write_to_user_msg_string(&self, user_message: &mut String) {
+        match self {
+            TurnInput::PlayerAction(a) => {
+                user_message.push_str("\n# player action\n");
+                user_message.push_str(a);
+            }
+            TurnInput::GmInstruction(i) => {
+                user_message.push_str("\n# gm command\n");
+                user_message.push_str(i);
+            }
+            TurnInput::Both {
+                player_action,
+                gm_instruction,
+            } => {
+                user_message.push_str("\n# player action\n");
+                user_message.push_str(player_action);
+                user_message.push_str("\n# gm command\n");
+                user_message.push_str(gm_instruction);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldDescription {
     main_description: String,
     pc_descriptions: BTreeMap<String, String>,
+    init_action: String,
 }
