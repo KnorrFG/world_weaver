@@ -137,13 +137,14 @@ impl SaveArchive {
         Ok(())
     }
 
-    pub fn append_image(&mut self, image_bytes: &[u8]) -> Result<()> {
+    pub fn append_image(&mut self, image_bytes: &[u8]) -> Result<usize> {
         let offset = self.header.index_offset;
         let length = image_bytes.len() as u64;
         self.file.set_len(offset)?;
         self.file.seek(SeekFrom::End(0))?;
         self.file.write_all(image_bytes)?;
 
+        let id = self.image_index.len();
         self.image_index.push((offset, length));
         self.header.index_offset += length;
         let serialized_index = serde_binary::to_vec(&self.image_index, Endian::Little)?;
@@ -151,7 +152,7 @@ impl SaveArchive {
         self.header.index_size = serialized_index.len() as u64;
         write_header(&mut self.file, &self.header)?;
 
-        Ok(())
+        Ok(id)
     }
 
     pub fn read_game_data(&mut self) -> Result<GameData> {
@@ -234,6 +235,7 @@ mod tests {
                 summary_before_input: if i == 0 { None } else { Some(i - 1) },
                 input,
                 output,
+                image_ids: vec![i],
             });
         }
 

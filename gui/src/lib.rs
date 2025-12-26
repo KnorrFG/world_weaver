@@ -5,7 +5,7 @@ use std::{
 
 use color_eyre::{Result, eyre::eyre};
 use engine::{
-    game::{Game, TurnOutput},
+    game::{Game, Image, TurnOutput},
     save_archive::SaveArchive,
 };
 use iced::{Element, Task, widget::text_editor};
@@ -76,6 +76,7 @@ impl std::error::Error for StringError {}
 pub enum Message {
     OutputComplete(Result<TurnOutput, StringError>),
     NewTextFragment(Result<String, StringError>),
+    ImageReady(Result<Image, StringError>),
     Init,
     UpdateActionText(text_editor::Action),
     ProposedActionButtonPressed(String),
@@ -121,9 +122,10 @@ pub const CLAUDE_MODEL: &str = "claude-sonnet-4-5";
 pub const DEFAULT_SAVE_NAME: &str = "default_save";
 pub const PERSISTENT_INFO_NAME: &str = "persisted_info";
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PersistedState {
-    pub claude_token: String,
+    pub claude_token: Option<String>,
+    pub flux_token: Option<String>,
 }
 
 pub fn load_json_file<T: DeserializeOwned>(world: &Path) -> Result<T> {

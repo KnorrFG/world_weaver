@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, pin::Pin};
 
 use crate::{
-    HIST_SIZE, LLMBox, N_PROPOSED_OPTIONS,
+    HIST_SIZE, ImgModBox, LLMBox, N_PROPOSED_OPTIONS,
     game::stream_finder::{MatchResult, StreamFinder},
     llm::{InputMessage, OutputMessage, Request, ResponseFragment},
 };
@@ -12,6 +12,7 @@ use color_eyre::{
     eyre::{bail, ensure},
 };
 use log::warn;
+use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
 use tokio::{pin, sync::oneshot};
 use tokio_stream::{Stream, StreamExt};
@@ -20,6 +21,7 @@ mod stream_finder;
 
 pub struct Game {
     llm: LLMBox,
+    imgmod: ImgModBox,
     data: GameData,
 }
 
@@ -28,17 +30,31 @@ impl Clone for Game {
         Self {
             llm: self.llm.clone(),
             data: self.data.clone(),
+            imgmod: self.imgmod.clone(),
         }
     }
 }
 
+enum SendToLLMState {
+    ParsingImageDescription,
+    StreamingOutputText,
+    FinishingUp,
+}
+
+pub struct AdvanceResult {
+    pub image: Pin<Box<dyn Future<Output = Result<Image>> + Send>>,
+    pub text_stream: Pin<Box<dyn Stream<Item = Result<String>> + Send>>,
+    pub round_output: Pin<Box<dyn Future<Output = Result<TurnOutput>> + Send>>,
+}
+
 impl Game {
-    pub fn load(llm: LLMBox, data: GameData) -> Self {
-        Game { llm, data }
+    pub fn load(llm: LLMBox, imgmod: ImgModBox, data: GameData) -> Self {
+        Game { llm, data, imgmod }
     }
 
     pub fn try_new(
         llm: LLMBox,
+        imgmod: ImgModBox,
         world_description: WorldDescription,
         player_character: String,
     ) -> Result<Self> {
@@ -51,6 +67,7 @@ impl Game {
 
         Ok(Game {
             llm,
+            imgmod,
             data: GameData {
                 world_description,
                 pc: player_character,
@@ -61,34 +78,71 @@ impl Game {
     }
 
     pub fn send_to_llm(&self, input: TurnInput) -> AdvanceResult {
-        let (tx, rx) = oneshot::channel();
+        let (tx_output, rx_output) = oneshot::channel();
+        let (tx_img_description, rx_img_description) = oneshot::channel();
+        let mut tx_img_description = Some(tx_img_description);
         let req = self.data.construct_request(&input);
         let mut llm = self.llm.clone();
+
+        let mut mode = SendToLLMState::ParsingImageDescription;
+
         let stream = try_stream! {
             let output = {
                 let stream = llm.send_request_stream(req);
-                let mut streaming = true;
-                let mut finder = StreamFinder::new("<<<EOO>>>");
+                let mut eoo_finder = StreamFinder::new("<<<EOO>>>");
+                let mut eoi_finder = StreamFinder::new("<<<EOIC>>>");
+                let mut image_description = String::new();
+                let mut post_eoi_text = None;
 
                 pin!(stream);
                 let output = loop {
                     if let Some(e) = stream.try_next().await? {
                         match e {
                             ResponseFragment::TextDelta(f) => {
-                                if streaming {
-                                    match finder.process(&f) {
-                                        MatchResult::Blocked => {}
-                                        MatchResult::CheckedOutput(output) => {
-                                            yield output;
-                                        }
-                                        MatchResult::StopTokenMatched(processed) => {
-                                            if !processed.is_empty() {
-                                                yield processed;
-                                            }
+                                match mode {
+                                    SendToLLMState::ParsingImageDescription => {
+                                        match eoi_finder.process(&f) {
+                                            MatchResult::Blocked => {},
+                                            MatchResult::CheckedOutput(o) => {
+                                                image_description.push_str(&o);
+                                            },
+                                            MatchResult::StopTokenMatched {
+                                                pre_token_text,
+                                                post_token_text } => {
+                                                image_description.push_str(&pre_token_text);
+                                                post_eoi_text = Some(post_token_text);
+                                                mode = SendToLLMState::StreamingOutputText;
 
-                                            streaming = false;
+                                                let description = parse_image_description(&image_description)?;
+                                                _ = tx_img_description.take().expect("finished parsing image description a second time. This should be impossible. It's a bug").send(description);
+                                            },
                                         }
-                                    }
+                                    },
+                                    SendToLLMState::StreamingOutputText => {
+                                        match eoo_finder.process(&f) {
+                                            MatchResult::Blocked => {}
+                                            MatchResult::CheckedOutput(output) => {
+                                                if let Some(mut prefix) = post_eoi_text.take() {
+                                                    prefix.push_str(&output);
+                                                    yield prefix;
+
+                                                } else {
+                                                    yield output;
+                                                }
+                                            }
+                                            MatchResult::StopTokenMatched{
+                                                pre_token_text: processed,
+                                                post_token_text: _,
+                                            } => {
+                                                if !processed.is_empty() {
+                                                    yield processed;
+                                                }
+
+                                                mode = SendToLLMState::FinishingUp
+                                            }
+                                        }
+                                    },
+                                    SendToLLMState::FinishingUp => {},
                                 }
                             }
                             ResponseFragment::MessageComplete(m) => {
@@ -103,13 +157,14 @@ impl Game {
                 stream.try_next().await?;
                 output
             };
-            _ = tx.send(output);
+            _ = tx_output.send(output);
 
         };
 
         AdvanceResult {
+            image: Box::pin(get_image(rx_img_description, self.imgmod.clone())),
             text_stream: Box::pin(stream),
-            round_output: Box::pin(async move { Ok(rx.await?) }),
+            round_output: Box::pin(async move { Ok(rx_output.await?) }),
         }
     }
 
@@ -117,7 +172,13 @@ impl Game {
         &self.data
     }
 
-    pub fn update(&mut self, input: TurnInput, output: TurnOutput) -> Result<()> {
+    pub fn update(
+        &mut self,
+        input: TurnInput,
+        output: TurnOutput,
+        image_ids: NonEmpty<usize>,
+        image_captions: NonEmpty<String>,
+    ) -> Result<()> {
         let turn_data = TurnData {
             summary_before_input: {
                 let len = self.data.summaries.len();
@@ -125,6 +186,8 @@ impl Game {
             },
             input,
             output: output.clone(),
+            image_ids,
+            image_captions,
         };
         self.data.turn_data.push(turn_data);
         warn!("Summary not implemented");
@@ -135,20 +198,45 @@ impl Game {
         self.data.turn_data.is_empty()
     }
 
-    pub fn start_or_get_last_output<'a>(&'a mut self) -> StartResultOrOutput {
+    pub fn start_or_get_last_output<'a>(&'a mut self) -> StartResultOrData {
         if let Some(turn) = self.data.turn_data.last() {
-            StartResultOrOutput::Output(turn.output.clone())
+            StartResultOrData::Data(turn.clone())
         } else {
             let input = TurnInput::PlayerAction(self.data.world_description.init_action.clone());
-            StartResultOrOutput::StartResult(self.send_to_llm(input.clone()), input)
+            StartResultOrData::StartResult(self.send_to_llm(input.clone()), input)
         }
     }
 }
 
-pub enum StartResultOrOutput {
-    StartResult(AdvanceResult, TurnInput),
-    Output(TurnOutput),
+fn parse_image_description(src: &str) -> Result<ImageDescription> {
+    let parts = src.split("<<<EOID>>>").collect::<Vec<&str>>();
+    let [description, caption] = parts[..] else {
+        bail!("No <<<EOID>>> in output");
+    };
+
+    Ok(ImageDescription {
+        description: description.into(),
+        caption: caption.into(),
+    })
 }
+
+async fn get_image(
+    rx_img_description: oneshot::Receiver<ImageDescription>,
+    imgmod: ImgModBox,
+) -> Result<Image> {
+    let description = rx_img_description.await?;
+    let bytes = imgmod.get_image(&description.description).await?;
+    Ok(Image {
+        caption: description.caption,
+        jpeg_bytes: bytes,
+    })
+}
+
+pub enum StartResultOrData {
+    StartResult(AdvanceResult, TurnInput),
+    Data(TurnData),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameData {
     pub world_description: WorldDescription,
@@ -172,7 +260,9 @@ impl GameData {
            In that world, I control {player}. When I input anything, it's a command
            for {player} to execute in the world. Then it's your turn to decide and tell
            me how the world react to my input, and what happens. One pair of messages,
-           one from me + one from you is called a turn.
+           one from me + one from you is called a turn. For each turn, you will also
+           generate a description that can be passed to Flux2 to generate an image.
+           
            My input will be structured like this: The turn number, followed by
            three sections, all optional, like this:
 
@@ -192,19 +282,24 @@ impl GameData {
            implausible, modify it by the least amount required to be possible,
            or interprete it in a way that makes it possible. These actions can fail.
 
-           The gm command means: that I want control over the story, and you should
+           The gm command means that I want control over the story, and you should
            respect it to the best of your abilities. 
 
            If I provide neither of those, it just means you should generate more output for the
            previous input.
 
            I will have you generate secret infos for each output, that I'll pass back
-           to the input, which is the third section.
+           to the input, which is the third section. 
 
            The output should have the following structure:
            --- START EXAMPLE ---
+           *The image description* will be passed to Flux2 to generate an image.
+           Unless the most important part of the current turn is a special place, scenery or
+           object, the image should show a character that is currently important.
+           <<<EOID>>>
+           *A short image caption* will be displayed below the image 1-5 words
+           <<<EOIC>>>
            *The output*: text that is displayed to me, this should be between 300 and 2000 words
-
            <<<EOO>>>
            *Secret info*:. Stuff that is related to output, but hidden from me,
            it's a note for yourself. It should be between 100 and 1000 words.
@@ -219,7 +314,8 @@ impl GameData {
            The above example is explanatory, you are supposed to replace all text within it,
            except for <<<EOO>>>, <<<EOS>>> and <<<EOA>>>, which are parsing delimiters and
            need to appear exactly like this on their own lines. So your generated output
-           should NOT start with `The output*:`
+           should NOT start with `The output*:`, additionally, it should not have a heading
+           or the turn number.
 
            The Proposed Actions should be one sentence each, describing 3 different
            plausable next actions for {player} to take.
@@ -292,11 +388,20 @@ pub struct TurnData {
     pub summary_before_input: Option<usize>,
     pub input: TurnInput,
     pub output: TurnOutput,
+    pub image_ids: NonEmpty<usize>,
+    pub image_captions: NonEmpty<String>,
 }
 
-pub struct AdvanceResult {
-    pub text_stream: Pin<Box<dyn Stream<Item = Result<String>> + Send>>,
-    pub round_output: Pin<Box<dyn Future<Output = Result<TurnOutput>> + Send>>,
+#[derive(Debug, Clone)]
+pub struct Image {
+    pub caption: String,
+    pub jpeg_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageDescription {
+    pub description: String,
+    pub caption: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

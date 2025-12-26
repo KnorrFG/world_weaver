@@ -5,6 +5,9 @@ pub struct Cli {
     #[arg(short, long)]
     pub claude_token: Option<String>,
 
+    #[arg(short, long)]
+    pub flux_token: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }

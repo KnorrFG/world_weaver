@@ -7,7 +7,10 @@ pub struct StreamFinder {
 #[derive(Debug, PartialEq, Eq)]
 pub enum MatchResult {
     Blocked,
-    StopTokenMatched(String),
+    StopTokenMatched {
+        pre_token_text: String,
+        post_token_text: String,
+    },
     CheckedOutput(String),
 }
 
@@ -52,7 +55,8 @@ impl StreamFinder {
 
     pub fn process(&mut self, input: &str) -> MatchResult {
         let mut output_chars = vec![];
-        for ch in input.chars() {
+        let mut chars = input.chars();
+        while let Some(ch) = chars.next() {
             match self.process_char(ch) {
                 ProcessCharOutcome::Mismatch => {
                     if self.stored_output.is_empty() {
@@ -73,7 +77,10 @@ impl StreamFinder {
                 }
                 ProcessCharOutcome::FullMatch => {
                     self.reset();
-                    return MatchResult::StopTokenMatched(output_chars.into_iter().collect());
+                    return MatchResult::StopTokenMatched {
+                        pre_token_text: output_chars.into_iter().collect(),
+                        post_token_text: chars.collect(),
+                    };
                 }
             }
         }
@@ -108,22 +115,26 @@ mod tests {
 
         assert_eq!(
             matcher.process("A User: is an"),
-            MatchResult::StopTokenMatched("A ".into()),
-        );
-
-        assert_eq!(
-            matcher.process("A User: is an"),
-            MatchResult::StopTokenMatched("A ".into()),
+            MatchResult::StopTokenMatched {
+                pre_token_text: "A ".into(),
+                post_token_text: " is an".into()
+            },
         );
 
         assert_eq!(
             matcher.process("User:"),
-            MatchResult::StopTokenMatched("".into()),
+            MatchResult::StopTokenMatched {
+                pre_token_text: "".into(),
+                post_token_text: "".into()
+            },
         );
 
         assert_eq!(
             matcher.process("UsUser:"),
-            MatchResult::StopTokenMatched("Us".into()),
+            MatchResult::StopTokenMatched {
+                pre_token_text: "Us".into(),
+                post_token_text: "".into(),
+            },
         );
     }
 }

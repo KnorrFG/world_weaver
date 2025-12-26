@@ -10,6 +10,7 @@ use color_eyre::{
 };
 use engine::{
     game::{Game, WorldDescription},
+    image_model::Flux2,
     llm::Claude,
     save_archive::SaveArchive,
 };
@@ -31,7 +32,7 @@ pub fn main() -> Result<()> {
     let cli = cli::Cli::parse();
     pretty_env_logger::init();
 
-    let pstate = load_persisted_state()?;
+    let pstate = load_persisted_state()?.unwrap_or_default();
 
     iced::application(
         move || match create_or_load_game(pstate.clone(), &cli) {
@@ -45,28 +46,36 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-fn create_or_load_game(mb_state: Option<PersistedState>, cli: &Cli) -> Result<(Game, SaveArchive)> {
-    let token = cli
+fn create_or_load_game(mb_state: PersistedState, cli: &Cli) -> Result<(Game, SaveArchive)> {
+    let claude_token = cli
         .claude_token
         .as_ref()
-        .or(mb_state.as_ref().map(|s| &s.claude_token))
-        .ok_or_else(|| eyre!("No Token saved, please provide one via cli"))?
+        .or(mb_state.claude_token.as_ref())
+        .ok_or_else(|| eyre!("No Claude-Token saved, please provide one via cli"))?
         .clone();
+    let llm = Box::new(Claude::new(claude_token.clone(), CLAUDE_MODEL.into()));
 
-    let llm = Box::new(Claude::new(token.clone(), CLAUDE_MODEL.into()));
+    let flux_token = cli
+        .flux_token
+        .as_ref()
+        .or(mb_state.flux_token.as_ref())
+        .ok_or_else(|| eyre!("No Flux-Token saved, please provide one via cli"))?
+        .clone();
+    let imgmod = Box::new(Flux2::new(flux_token.clone()));
 
     match cli.command.as_ref() {
         Some(cli::Command::NewGame(cli::NewGame { world, player })) => {
             ensure!(world.exists(), "provided world doesn't exist");
 
             let world_desc = load_json_file(world)?;
-            let game = Game::try_new(llm, world_desc, player.clone())?;
+            let game = Game::try_new(llm, imgmod, world_desc, player.clone())?;
             let save_path = default_save_path()?;
             fs::create_dir_all(save_path.parent().unwrap())?;
             let mut archive = SaveArchive::create(save_path)?;
             archive.write_game_data(game.get_data())?;
             save_persisted_state(&PersistedState {
-                claude_token: token,
+                claude_token: Some(claude_token),
+                flux_token: Some(flux_token),
             })?;
             Ok((game, archive))
         }
@@ -81,7 +90,7 @@ fn create_or_load_game(mb_state: Option<PersistedState>, cli: &Cli) -> Result<(G
             debug!("Loading save: {save_path:?}");
             let mut archive = SaveArchive::open(save_path)?;
             let game_data = archive.read_game_data()?;
-            Ok((Game::load(llm, game_data), archive))
+            Ok((Game::load(llm, imgmod, game_data), archive))
         }
     }
 }

@@ -1,0 +1,28 @@
+Todos:
+
+- The image description lands in the TurnOutput::text field. Not the idea. Maybe in its own field.
+- The Caption is in the wrong place in the gui
+- the image should probably be 800x1200 or something like that, or let the AI decide.
+- game::send_to_llm is in urgent need of a refactor
+- cost of image generation is returned nowhere
+
+Critical missing features:
+
+- Summary
+- skip to turns and load from there
+
+
+Missing features:
+
+- submit with ctrl+enter, or if need be, only with enter (probably much easier)
+- access all information in the game, including hidden information, image descriptions, etc
+- world editor
+- appropriate error handling
+- editing world ingame
+- image styles
+- exporting world from save
+- save/load
+- starting a new game without cli
+- configure tokens without cli
+- display of costs
+- theming not working
