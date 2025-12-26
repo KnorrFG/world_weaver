@@ -11,11 +11,13 @@ use color_eyre::{
 use engine::{
     game::{Game, WorldDescription},
     llm::Claude,
+    save_archive::SaveArchive,
 };
 use iced::{
-    Task,
+    Task, debug,
     widget::{Column, button, column, text},
 };
+use log::debug;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use world_weaver::{
@@ -27,15 +29,14 @@ use world_weaver::{
 
 pub fn main() -> Result<()> {
     let cli = cli::Cli::parse();
-    let game = create_or_load_game(load_persisted_state()?, &cli)?;
     pretty_env_logger::init();
 
+    let pstate = load_persisted_state()?;
+
     iced::application(
-        move || {
-            (
-                Gui::new(game.clone(), default_save_path().unwrap()),
-                Task::done(Message::Init),
-            )
+        move || match create_or_load_game(pstate.clone(), &cli) {
+            Ok((game, save)) => (Gui::new(game.clone(), save), Task::done(Message::Init)),
+            Err(e) => panic!("{e:#?}"),
         },
         Gui::update,
         Gui::view,
@@ -44,7 +45,7 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-fn create_or_load_game(mb_state: Option<PersistedState>, cli: &Cli) -> Result<Game> {
+fn create_or_load_game(mb_state: Option<PersistedState>, cli: &Cli) -> Result<(Game, SaveArchive)> {
     let token = cli
         .claude_token
         .as_ref()
@@ -61,21 +62,26 @@ fn create_or_load_game(mb_state: Option<PersistedState>, cli: &Cli) -> Result<Ga
             let world_desc = load_json_file(world)?;
             let game = Game::try_new(llm, world_desc, player.clone())?;
             let save_path = default_save_path()?;
-            save_json_file(&save_path, game.get_data())?;
+            fs::create_dir_all(save_path.parent().unwrap())?;
+            let mut archive = SaveArchive::create(save_path)?;
+            archive.write_game_data(game.get_data())?;
             save_persisted_state(&PersistedState {
                 claude_token: token,
-                active_save: save_path,
             })?;
-            Ok(game)
+            Ok((game, archive))
         }
 
         _ => {
-            let state = mb_state.ok_or_else(|| {
-                eyre!("No game running. Please start a new one via the NewGame command")
-            })?;
+            let save_path = default_save_path()?;
+            ensure!(
+                save_path.exists(),
+                "No game running. Please start a new one via the NewGame command"
+            );
 
-            let game_data = load_json_file(&state.active_save)?;
-            Ok(Game::load(llm, game_data))
+            debug!("Loading save: {save_path:?}");
+            let mut archive = SaveArchive::open(save_path)?;
+            let game_data = archive.read_game_data()?;
+            Ok((Game::load(llm, game_data), archive))
         }
     }
 }

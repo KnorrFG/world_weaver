@@ -31,13 +31,6 @@ pub struct InputMessage {
 }
 
 impl InputMessage {
-    pub(crate) fn system(system_message: String) -> InputMessage {
-        Self {
-            role: Role::System,
-            content: system_message,
-        }
-    }
-
     pub(crate) fn user(user_message: String) -> InputMessage {
         Self {
             role: Role::User,
@@ -65,7 +58,6 @@ pub struct OutputMessage {
 pub enum Role {
     User,
     Assistant,
-    System,
 }
 
 mod claude;

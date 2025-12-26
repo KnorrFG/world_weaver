@@ -1,16 +1,13 @@
 use std::mem;
 
-use color_eyre::{eyre::bail, owo_colors::OwoColorize};
+use color_eyre::eyre::bail;
 use engine::game::{AdvanceResult, StartResultOrOutput, TurnInput, TurnOutput};
 use iced::{
-    Color, Element, Length, Padding, Task, Theme, padding,
-    widget::{
-        Button, Column, Space, button, column, container, markdown, row, scrollable, space, text,
-        text_editor, text_input,
-    },
+    Element, Length, Task, Theme, padding,
+    widget::{Button, Column, button, container, markdown, row, scrollable, space, text_editor},
 };
 
-use crate::{Message, State, StringError, cmd, save_json_file};
+use crate::{Message, State, StringError, cmd};
 
 #[derive(Debug)]
 pub struct Playing {
@@ -56,7 +53,7 @@ impl State for Playing {
                 };
 
                 ctx.game.update(input, output)?;
-                save_json_file(&ctx.save_path, ctx.game.get_data())?;
+                ctx.save.write_game_data(ctx.game.get_data())?;
                 cmd::none()
             }
             Message::NewTextFragment(t) => {
@@ -121,7 +118,7 @@ impl State for Playing {
         }
     }
 
-    fn view<'a>(&'a self, ctx: &'a crate::Context) -> iced::Element<'a, Message> {
+    fn view<'a>(&'a self, _ctx: &'a crate::Context) -> iced::Element<'a, Message> {
         let side_bar_width = 400;
         let sidebar = Column::new();
         let sidebar: Element<Message> = if let SubState::Complete(output) = &self.sub_state {

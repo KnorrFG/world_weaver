@@ -4,12 +4,17 @@ use std::{
 };
 
 use color_eyre::{Result, eyre::eyre};
-use engine::game::{AdvanceResult, Game, GameData, TurnOutput};
+use engine::{
+    game::{Game, TurnOutput},
+    save_archive::SaveArchive,
+};
 use iced::{Element, Task, widget::text_editor};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub mod cli;
 pub mod states;
+
+const APP_NAME: &str = "World Weaver";
 
 pub trait State: fmt::Debug {
     fn update(&mut self, event: Message, ctx: &mut Context) -> Result<StateCommand>;
@@ -22,10 +27,10 @@ pub struct Gui {
 }
 
 impl Gui {
-    pub fn new(game: Game, save_path: PathBuf) -> Self {
+    pub fn new(game: Game, save: SaveArchive) -> Self {
         Gui {
             state: Box::new(states::Playing::new()),
-            ctx: Context { game, save_path },
+            ctx: Context { game, save },
         }
     }
 
@@ -47,7 +52,7 @@ impl Gui {
 
 pub struct Context {
     game: Game,
-    save_path: PathBuf,
+    save: SaveArchive,
 }
 
 #[derive(Debug, Clone)]
@@ -116,10 +121,9 @@ pub const CLAUDE_MODEL: &str = "claude-sonnet-4-5";
 pub const DEFAULT_SAVE_NAME: &str = "default_save";
 pub const PERSISTENT_INFO_NAME: &str = "persisted_info";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PersistedState {
     pub claude_token: String,
-    pub active_save: PathBuf,
 }
 
 pub fn load_json_file<T: DeserializeOwned>(world: &Path) -> Result<T> {
@@ -131,16 +135,17 @@ pub fn save_json_file<T: Serialize>(path: &Path, x: &T) -> Result<()> {
     Ok(fs::write(path, &serde_json::to_string(x)?)?)
 }
 
-pub fn persistent_state_path() -> Result<PathBuf> {
+pub fn data_dir() -> Result<PathBuf> {
     Ok(dirs::data_dir()
         .ok_or(eyre!("Couldn't find data dir"))?
-        .join(PERSISTENT_INFO_NAME))
+        .join(APP_NAME))
+}
+pub fn persistent_state_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join(PERSISTENT_INFO_NAME))
 }
 
 pub fn default_save_path() -> Result<PathBuf> {
-    Ok(dirs::data_dir()
-        .ok_or(eyre!("Couldn't find data dir"))?
-        .join(DEFAULT_SAVE_NAME))
+    Ok(data_dir()?.join(DEFAULT_SAVE_NAME))
 }
 
 pub fn load_persisted_state() -> Result<Option<PersistedState>> {

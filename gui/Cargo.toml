@@ -10,6 +10,7 @@ dirs = "6.0.0"
 engine = { path = "../engine" }
 
 iced = { version = "0.14.0", features = ["markdown", "tokio", "advanced", "debug"] }
+log = "0.4.29"
 pretty_env_logger = "0.5.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.146"

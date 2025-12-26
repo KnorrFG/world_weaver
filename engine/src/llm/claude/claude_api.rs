@@ -27,7 +27,10 @@ pub struct Request {
 pub struct RequestBody {
     pub model: String,
     pub messages: Vec<InputMessage>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
+
     pub max_tokens: usize,
     pub stream: bool,
 }
@@ -159,21 +162,19 @@ mod test {
             system: None,
             messages: vec![
                 InputMessage {
-                    role: Role::System,
-                    content: "Some System msg".into(),
-                },
-                InputMessage {
                     role: Role::User,
                     content: "Some user msg".into(),
+                },
+                InputMessage {
+                    role: Role::Assistant,
+                    content: "Some Assitant msg".into(),
                 },
             ],
             max_tokens: 200,
             stream: false,
         };
 
-        let expect = expect![[
-            r#"{"model":"model","messages":[{"role":"system","content":"Some System msg"},{"role":"user","content":"Some user msg"}],"max_tokens":200,"stream":false}"#
-        ]];
+        let expect = expect![[r#"{"model":"model","messages":[{"role":"user","content":"Some user msg"},{"role":"assistant","content":"Some Assitant msg"}],"max_tokens":200,"stream":false}"#]];
         expect.assert_eq(&serde_json::to_string(&body).unwrap());
     }
 }

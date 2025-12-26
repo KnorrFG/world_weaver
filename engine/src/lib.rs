@@ -7,3 +7,4 @@ pub const N_PROPOSED_OPTIONS: usize = 3;
 pub const HIST_SIZE: usize = 8;
 
 pub mod game;
+pub mod save_archive;

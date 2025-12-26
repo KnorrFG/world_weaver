@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, iter, pin::Pin};
+use std::{collections::BTreeMap, pin::Pin};
 
 use crate::{
     HIST_SIZE, LLMBox, N_PROPOSED_OPTIONS,
@@ -151,10 +151,10 @@ pub enum StartResultOrOutput {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameData {
-    world_description: WorldDescription,
-    pc: String,
-    summaries: Vec<Summary>,
-    turn_data: Vec<TurnData>,
+    pub world_description: WorldDescription,
+    pub pc: String,
+    pub summaries: Vec<Summary>,
+    pub turn_data: Vec<TurnData>,
 }
 
 impl GameData {
@@ -244,10 +244,11 @@ impl GameData {
             .flat_map(|i| {
                 let mut user_message = format!("turn {i}");
                 let TurnData { input, output, .. } = &self.turn_data[i];
-                let last_secret_info = self
-                    .turn_data
-                    .get(i.saturating_sub(1))
-                    .map(|td| &td.output.secret_info);
+                let last_secret_info = if i > 0 {
+                    self.turn_data.get(i - 1).map(|td| &td.output.secret_info)
+                } else {
+                    None
+                };
 
                 input.write_to_user_msg_string(&mut user_message);
                 if let Some(secret_info) = last_secret_info {
@@ -281,16 +282,16 @@ impl GameData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Summary {
-    content: String,
+    pub content: String,
     /// the turn after which it was created
-    age: usize,
+    pub age: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnData {
-    summary_before_input: Option<usize>,
-    input: TurnInput,
-    output: TurnOutput,
+    pub summary_before_input: Option<usize>,
+    pub input: TurnInput,
+    pub output: TurnOutput,
 }
 
 pub struct AdvanceResult {
@@ -398,7 +399,7 @@ impl TurnInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldDescription {
-    main_description: String,
-    pc_descriptions: BTreeMap<String, String>,
-    init_action: String,
+    pub main_description: String,
+    pub pc_descriptions: BTreeMap<String, String>,
+    pub init_action: String,
 }
