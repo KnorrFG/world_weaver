@@ -10,8 +10,9 @@ Critical missing features:
 
 Missing features:
 
-- submit with ctrl+enter, or if need be, only with enter (probably much easier)
+
 - access all information in the game, including hidden information, image descriptions, etc
+- regenerate turn
 - world editor
 - appropriate error handling
 - editing world ingame

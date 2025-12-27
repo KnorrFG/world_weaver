@@ -80,6 +80,8 @@ pub enum Message {
     ImageReady(Result<Image, StringError>),
     Init,
     UpdateActionText(text_editor::Action),
+    UpdateGMInstructionText(text_editor::Action),
+
     ProposedActionButtonPressed(String),
     Submit,
     SummaryFinished(Result<Option<OutputMessage>, StringError>),

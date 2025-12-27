@@ -24,7 +24,13 @@ pub struct Playing {
     current_output: String,
     markdown: Vec<markdown::Item>,
     action_text_content: text_editor::Content,
+    gm_instruction_text_content: text_editor::Content,
     image_data: Option<(iced::advanced::image::Handle, String)>,
+}
+
+enum EditorId {
+    PlayerAction,
+    GMInstruction,
 }
 
 impl Playing {
@@ -33,6 +39,7 @@ impl Playing {
             sub_state: SubState::Uninit,
             current_output: "".into(),
             action_text_content: text_editor::Content::default(),
+            gm_instruction_text_content: text_editor::Content::default(),
             markdown: vec![],
             image_data: None,
         }
@@ -75,7 +82,24 @@ impl Playing {
         ctx.save.write_game_data(ctx.game.get_data())?;
         self.sub_state = SubState::Complete(output);
         self.action_text_content = text_editor::Content::default();
+        self.gm_instruction_text_content = text_editor::Content::default();
         Ok(())
+    }
+
+    fn update_editor_content(
+        &mut self,
+        action: text_editor::Action,
+        editor: EditorId,
+    ) -> Result<StateCommand, color_eyre::eyre::Error> {
+        if let text_editor::Action::Edit(Edit::Enter) = action {
+            cmd::task(Task::done(Message::Submit))
+        } else {
+            match editor {
+                EditorId::PlayerAction => self.action_text_content.perform(action),
+                EditorId::GMInstruction => self.gm_instruction_text_content.perform(action),
+            }
+            cmd::none()
+        }
     }
 }
 
@@ -169,12 +193,10 @@ impl State for Playing {
                 }
             },
             Message::UpdateActionText(action) => {
-                if let text_editor::Action::Edit(Edit::Enter) = action {
-                    cmd::task(Task::done(Message::Submit))
-                } else {
-                    self.action_text_content.perform(action);
-                    cmd::none()
-                }
+                self.update_editor_content(action, EditorId::PlayerAction)
+            }
+            Message::UpdateGMInstructionText(action) => {
+                self.update_editor_content(action, EditorId::GMInstruction)
             }
             Message::ProposedActionButtonPressed(s) => {
                 if self.action_text_content.text() == s {
@@ -185,7 +207,11 @@ impl State for Playing {
                 }
             }
             Message::Submit => {
-                let input = TurnInput::player_action(self.action_text_content.text());
+                // let input = TurnInput::player_action(self.action_text_content.text());
+                let input = TurnInput {
+                    player_action: self.action_text_content.text(),
+                    gm_instruction: self.gm_instruction_text_content.text(),
+                };
                 self.current_output.clear();
                 let AdvanceResult {
                     text_stream,
@@ -274,9 +300,19 @@ impl State for Playing {
                         proposed_action_button(&output.proposed_next_actions[1]).width(button_w),
                         proposed_action_button(&output.proposed_next_actions[2]).width(button_w),
                         widget::Space::new().height(10),
+                        row![widget::text("What to do next:"), space::horizontal()],
                         widget::text_editor(&self.action_text_content)
                             .placeholder("Type an action")
                             .on_action(Message::UpdateActionText)
+                            .width(button_w),
+                        widget::Space::new().height(10),
+                        row![
+                            widget::text("Optional, additional instructions with GM powers:"),
+                            space::horizontal()
+                        ],
+                        widget::text_editor(&self.gm_instruction_text_content)
+                            .placeholder("Type an action")
+                            .on_action(Message::UpdateGMInstructionText)
                             .width(button_w),
                         row![space::horizontal(), button("Go").on_press(Message::Submit)]
                     ]

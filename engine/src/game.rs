@@ -245,10 +245,7 @@ impl Game {
         if let Some(turn) = self.data.turn_data.last() {
             StartResultOrData::Data(turn.clone())
         } else {
-            let input = TurnInput {
-                player_action: Some(self.data.world_description.init_action.clone()),
-                gm_instruction: None,
-            };
+            let input = TurnInput::player_action(self.data.world_description.init_action.clone());
             StartResultOrData::StartResult(self.send_to_llm(input.clone()), input)
         }
     }
@@ -344,8 +341,8 @@ async fn create_new_summary(
                 # assistant output
                 {}
                 # secret info
-                {}", player_action.as_deref().unwrap_or(""),
-               gm_instruction.as_deref().unwrap_or(""),
+                {}", player_action,
+               gm_instruction,
                t.output.text,
                t.output.secret_info
             }
@@ -362,6 +359,8 @@ async fn create_new_summary(
             {}
         "#, term_strs.join("\n---\n")};
 
+    debug!("Sending summary request - system msg:\n{system_message}");
+    debug!("Sending summary request - user msg:\n{user_message}");
     let mut stream = llm.send_request_stream(Request {
         system: Some(system_message.into()),
         messages: vec![InputMessage::user(user_message)],
@@ -477,10 +476,11 @@ impl GameData {
            *A short image caption* will be displayed below the image 1-5 words
            <<<EOIC>>>
            *The output*: text that is displayed to me, this should be between 300 and 1500 words at most
-           Short is ok. No need for characters to hold endless monologues.
+           No need for characters to hold endless monologues.
            <<<EOO>>>
            *Secret info*:. Stuff that is related to output, but hidden from me,
-           it's a note for yourself. Keep it real short 500 words at most.
+           it's a note for yourself. Keep it real short 500 words at most. Don't repeat
+           information here that's already in the inputs or outputs.
            <<<EOS>>>
            Proposed Action 1
            <<<EOA>>>
@@ -659,27 +659,23 @@ impl TryFrom<OutputMessage> for TurnOutput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnInput {
-    pub player_action: Option<String>,
-    pub gm_instruction: Option<String>,
+    pub player_action: String,
+    pub gm_instruction: String,
 }
 
 impl TurnInput {
     pub fn player_action(s: String) -> Self {
         Self {
-            player_action: Some(s),
-            gm_instruction: None,
+            player_action: s,
+            gm_instruction: "".into(),
         }
     }
 
     pub fn write_to_user_msg_string(&self, user_message: &mut String) {
-        if let Some(a) = &self.player_action {
-            user_message.push_str("\n# player action\n");
-            user_message.push_str(a);
-        }
-        if let Some(i) = &self.gm_instruction {
-            user_message.push_str("\n# gm command\n");
-            user_message.push_str(i);
-        }
+        user_message.push_str("\n# player action\n");
+        user_message.push_str(&self.player_action);
+        user_message.push_str("\n# gm command\n");
+        user_message.push_str(&self.gm_instruction);
     }
 }
 
