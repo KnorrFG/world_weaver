@@ -1,22 +1,24 @@
 use std::mem;
 
-use color_eyre::{Result, eyre::bail};
-use engine::game::{AdvanceResult, Image, StartResultOrData, TurnInput, TurnOutput};
+use color_eyre::{
+    Result,
+    eyre::{bail, eyre},
+};
+use engine::game::{AdvanceResult, Image, StartResultOrData, TurnData, TurnInput, TurnOutput};
 use iced::{
-    Alignment, Background, Color, Element, Length, Task, Theme,
-    alignment::{Horizontal, Vertical},
+    Background, Color, Element, Length, Task, Theme,
+    alignment::Horizontal,
     padding,
     widget::{
         self, Button, Column, button, container,
         image::Handle,
-        markdown::{self, Content},
-        row, scrollable, space,
+        markdown, row, scrollable, space,
         text_editor::{self, Edit},
     },
 };
 use nonempty::nonempty;
 
-use crate::{Context, Message, State, StateCommand, StringError, cmd};
+use crate::{Context, Message, State, StateCommand, StringError, cmd, elem_list};
 
 #[derive(Debug)]
 pub struct Playing {
@@ -101,6 +103,48 @@ impl Playing {
             cmd::none()
         }
     }
+
+    /// loading completed turn n actually means loading turn n+1, but this way it's less confusing
+    fn load_completed_turn(&mut self, ctx: &mut Context, target_turn: usize) -> Result<()> {
+        let turn_data = ctx
+            .game
+            .get_data()
+            .turn_data
+            .get(target_turn)
+            .ok_or(eyre!("Invalid target turn: {target_turn}"))?;
+        self.image_data = Some((
+            Handle::from_bytes(ctx.save.read_image(*turn_data.image_ids.first())?),
+            turn_data.image_captions.first().clone(),
+        ));
+        self.markdown = markdown::parse(&turn_data.output.text).collect();
+
+        // this looks wrong but is right. If we load the completed turn 0, the displayed output
+        // is the ouput of turn 0, but that means we're actually in turn 1
+        if target_turn + 1 == ctx.game.current_turn() {
+            self.sub_state = SubState::Complete(turn_data.output.clone());
+        } else {
+            self.sub_state = SubState::InThePast {
+                completed_turn: target_turn,
+                _data: turn_data.clone(),
+            };
+        }
+        Ok(())
+    }
+
+    /// turn semantics are as follows:
+    /// when the game starts, that's turn 0, before there is any input or output
+    /// the result of the 0th turn is stored in game.data_turn_data[0].
+    /// As soon as you finish the first turn (index 0), you are in turn 1.
+    /// But in turn 1, you do see the outputs of turn 0;
+    fn current_turn(&self, ctx: &Context) -> usize {
+        match &self.sub_state {
+            SubState::InThePast {
+                completed_turn,
+                _data,
+            } => *completed_turn + 1,
+            _ => ctx.game.current_turn(),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -118,6 +162,16 @@ enum SubState {
         output: TurnOutput,
         image: Image,
     },
+    InThePast {
+        completed_turn: usize,
+        _data: TurnData,
+    },
+}
+
+impl SubState {
+    fn is_complete(&self) -> bool {
+        matches!(self, Self::Complete(_))
+    }
 }
 
 impl State for Playing {
@@ -272,10 +326,39 @@ impl State for Playing {
                 self.complete_turn(ctx, input, output, image, output_message?.map(|m| m.text))?;
                 cmd::none()
             }
+            Message::PrevTurnButtonPressed => {
+                let target_turn = match &self.sub_state {
+                    SubState::Complete(_) => ctx.game.current_turn() - 2,
+                    SubState::InThePast {
+                        completed_turn: turn,
+                        ..
+                    } => *turn - 1,
+                    other => bail!(
+                        "PrevTurnButtonPressed but Substate is not Complete or InThePast: {:?}",
+                        other
+                    ),
+                };
+                self.load_completed_turn(ctx, target_turn)?;
+                cmd::none()
+            }
+            Message::NextTurnButtonPressed => {
+                let target_turn = match &self.sub_state {
+                    SubState::InThePast {
+                        completed_turn: turn,
+                        ..
+                    } => *turn + 1,
+                    other => bail!(
+                        "PrevTurnButtonPressed but Substate is not Complete or InThePast: {:?}",
+                        other
+                    ),
+                };
+                self.load_completed_turn(ctx, target_turn)?;
+                cmd::none()
+            }
         }
     }
 
-    fn view<'a>(&'a self, _ctx: &'a crate::Context) -> iced::Element<'a, Message> {
+    fn view<'a>(&'a self, ctx: &'a crate::Context) -> iced::Element<'a, Message> {
         let mut sidebar = Column::new();
         if let Some((handle, caption)) = &self.image_data {
             sidebar = sidebar.extend([
@@ -290,40 +373,34 @@ impl State for Playing {
             markdown::view(&self.markdown, Theme::TokyoNight).map(|_| unreachable!())
         ];
 
-        if let SubState::Complete(output) = &self.sub_state {
-            let button_w = 500;
-            main_col = main_col
-                .push(
-                    widget::column![
-                        widget::Space::new().height(20),
-                        proposed_action_button(&output.proposed_next_actions[0]).width(button_w),
-                        proposed_action_button(&output.proposed_next_actions[1]).width(button_w),
-                        proposed_action_button(&output.proposed_next_actions[2]).width(button_w),
-                        widget::Space::new().height(10),
-                        row![widget::text("What to do next:"), space::horizontal()],
-                        widget::text_editor(&self.action_text_content)
-                            .placeholder("Type an action")
-                            .on_action(Message::UpdateActionText)
-                            .width(button_w),
-                        widget::Space::new().height(10),
-                        row![
-                            widget::text("Optional, additional instructions with GM powers:"),
-                            space::horizontal()
-                        ],
-                        widget::text_editor(&self.gm_instruction_text_content)
-                            .placeholder("Type an action")
-                            .on_action(Message::UpdateGMInstructionText)
-                            .width(button_w),
-                        row![space::horizontal(), button("Go").on_press(Message::Submit)]
-                    ]
-                    .max_width(500)
-                    .spacing(15),
-                )
-                .spacing(10)
-                .into();
-        }
+        let button_w = 500;
+        let elems: Vec<_> = match &self.sub_state {
+            SubState::Complete(output) => mk_input_ui_portion(
+                output,
+                button_w,
+                &self.action_text_content,
+                &self.gm_instruction_text_content,
+            )
+            .into_iter()
+            .chain([
+                widget::rule::horizontal(1).into(),
+                mk_turn_selection_buttons(ctx, ctx.game.current_turn()).into(),
+            ])
+            .collect(),
+            SubState::InThePast {
+                completed_turn: turn,
+                _data,
+            } => {
+                vec![mk_turn_selection_buttons(ctx, *turn).into()]
+            }
+            _ => vec![],
+        };
 
-        let main_row = row![
+        main_col = main_col
+            .push(widget::column(elems).max_width(500).spacing(15))
+            .spacing(10);
+
+        let text_row = row![
             container(scrollable(
                 container(main_col.align_x(Horizontal::Center))
                     .padding(padding::all(10.).right(20.))
@@ -339,11 +416,77 @@ impl State for Playing {
         ]
         .spacing(20);
 
-        Element::from(container(main_row).center_x(Length::Fill).padding(20))
+        let main_col = widget::column![
+            widget::text!(
+                "{} - Turn {}",
+                ctx.game.world_name(),
+                self.current_turn(ctx),
+            )
+            .size(32),
+            widget::rule::horizontal(2),
+            container(text_row).center_x(Length::Fill).padding(20)
+        ]
+        .align_x(Horizontal::Center)
+        .max_width(1500)
+        .spacing(10);
+
+        Element::from(
+            container(main_col)
+                .center_x(Length::Fill)
+                .padding(padding::top(20)),
+        )
         // .explain(iced::Color::from_rgb(1., 0., 0.))
     }
 }
 
 fn proposed_action_button<'a>(text: &'a str) -> Button<'a, Message> {
     button(text).on_press(Message::ProposedActionButtonPressed(text.into()))
+}
+
+fn mk_turn_selection_buttons(
+    ctx: &Context,
+    current_turn: usize,
+) -> impl Into<Element<'_, Message>> {
+    let mut row = widget::Row::new();
+    if current_turn > 0 {
+        row = row.push(widget::button("←").on_press(Message::PrevTurnButtonPressed));
+    }
+    row = row.push(widget::space::horizontal());
+    row = row.push(widget::button("Goto Turn"));
+    row = row.push(widget::space::horizontal());
+    if current_turn < ctx.game.current_turn() - 1 {
+        row = row.push(widget::button("→").on_press(Message::NextTurnButtonPressed));
+    }
+
+    row
+}
+
+fn mk_input_ui_portion<'a>(
+    output: &'a TurnOutput,
+    button_w: u32,
+    action_text_content: &'a text_editor::Content,
+    gm_instruction_text_content: &'a text_editor::Content,
+) -> impl IntoIterator<Item = Element<'a, Message>> {
+    elem_list![
+        widget::Space::new().height(20),
+        proposed_action_button(&output.proposed_next_actions[0]).width(button_w),
+        proposed_action_button(&output.proposed_next_actions[1]).width(button_w),
+        proposed_action_button(&output.proposed_next_actions[2]).width(button_w),
+        widget::Space::new().height(10),
+        row![widget::text("What to do next:"), space::horizontal()],
+        widget::text_editor(action_text_content)
+            .placeholder("Type an action")
+            .on_action(Message::UpdateActionText)
+            .width(button_w),
+        widget::Space::new().height(10),
+        row![
+            widget::text("Optional, additional instructions with GM powers:"),
+            space::horizontal()
+        ],
+        widget::text_editor(gm_instruction_text_content)
+            .placeholder("Type an action")
+            .on_action(Message::UpdateGMInstructionText)
+            .width(button_w),
+        row![space::horizontal(), button("Go").on_press(Message::Submit)],
+    ]
 }

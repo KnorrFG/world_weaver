@@ -85,6 +85,10 @@ pub enum Message {
     ProposedActionButtonPressed(String),
     Submit,
     SummaryFinished(Result<Option<OutputMessage>, StringError>),
+
+    PrevTurnButtonPressed,
+    NextTurnButtonPressed,
+    // GotoTurnButtonPressed,
 }
 
 #[derive(Debug, Default)]
@@ -168,3 +172,10 @@ pub fn save_persisted_state(ps: &PersistedState) -> Result<()> {
     save_json_file(&path, ps)?;
     Ok(())
 }
+
+macro_rules! elem_list {
+    ($($elems:expr),+ $(,)?) => {
+        [$(iced::Element::from($elems)),*]
+    };
+}
+pub(crate) use elem_list;

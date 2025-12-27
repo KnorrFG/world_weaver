@@ -40,8 +40,8 @@ pub async fn query(prompt: &str, api_key: &str, client: &reqwest::Client) -> Res
     let payload = serde_json::json!({
         "prompt": prompt,
         "model": "flux-2-pro",
-        "width": 800,
-        "height": 1200,
+        "width": 832,
+        "height": 1216,
         "safety_tolerance": 5,
     });
 
@@ -100,6 +100,7 @@ pub async fn poll_and_fetch(
                 let bytes = resp.bytes().await?.to_vec();
                 return Ok(bytes);
             }
+            "Request Moderated" => bail!("Request moderated"),
             "Error" => bail!("Flux2 job failed:\n{poll:#?}"),
             _ => sleep(Duration::from_secs(1)).await,
         }

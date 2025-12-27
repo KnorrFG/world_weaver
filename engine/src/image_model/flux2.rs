@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use color_eyre::Result;
+use color_eyre::{Result, eyre::Context};
 use log::debug;
 
 use crate::image_model::{Image, ImageModel};
@@ -35,7 +35,8 @@ impl ImageModel for Flux2 {
             debug!("Query response: {response:#?}");
             let data =
                 flux2_api::poll_and_fetch(&response.polling_url, &self.api_key, &self.client)
-                    .await?;
+                    .await
+                    .with_context(|| format!("Image description:\n{description}"))?;
             Ok(Image { data, cost })
         })
     }

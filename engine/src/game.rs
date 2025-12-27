@@ -176,6 +176,14 @@ impl Game {
         &self.data
     }
 
+    pub fn current_turn(&self) -> usize {
+        self.data.turn_data.len()
+    }
+
+    pub fn world_name(&self) -> &str {
+        "Worlds don't have names yet"
+    }
+
     pub fn mk_summary_if_neccessary(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<OutputMessage>>> + Send + 'static>> {
@@ -322,6 +330,8 @@ async fn create_new_summary(
               - Important world or character state changes
               - Decisions and consequences that affect future gameplay
             - No formatting beyond plain paragraphs unless explicitly requested.
+            - Make sure to include all relevant information from the last summary
+              and all provided turns, don't overweight the latest ones.
 
             You are a summarization tool, not a storyteller.
         "#};
@@ -427,6 +437,7 @@ impl GameData {
     fn construct_request(&self, input: &TurnInput) -> Request {
         let player = &self.pc;
         let world_description = &self.world_description.main_description;
+        let pc_description = &self.world_description.pc_descriptions[&self.pc];
         let last_summary = self.summaries.last();
         let (summary, summary_turn) = match last_summary {
             Some(Summary { content, bday }) => (content.as_str(), *bday),
@@ -442,7 +453,11 @@ impl GameData {
            generate a description that can be passed to Flux2 to generate an image.
            When describing characters in image descriptions use many details, and make
            sure they match the actual current character state to increase
-           the likelyhood of characters looking the same everytime. Be consistent.
+           the likelyhood of characters looking the same everytime. Be consistent and
+           precise, especially about hair style, clothes and accesories.
+           Also, make sure to formulate the image description in a way that avoids
+           image moderation because of sexual content. When you describe anatomy,
+           do it in a non-erotic way.
            
            My input will be structured like this: The turn number, followed by
            three sections, all optional, like this:
@@ -505,8 +520,13 @@ impl GameData {
            {world_description} 
            --- END DESCRIPTION ---
 
-           Here is a summary of everthing that has happened up till turn {summary_turn}:
+           Here is a description of my character, {player}:
+           --- START DESCRIPTION ---
+           {pc_description}
+           --- END DESCRIPTION ---
+           
 
+           Here is a summary of everthing that has happened up till turn {summary_turn}:
            --- START SUMMARY ---
            {summary} 
            --- END SUMMARY ---
