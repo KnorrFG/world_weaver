@@ -42,6 +42,7 @@ pub async fn query(prompt: &str, api_key: &str, client: &reqwest::Client) -> Res
         "model": "flux-2-pro",
         "width": 800,
         "height": 1200,
+        "safety_tolerance": 5,
     });
 
     let resp = client

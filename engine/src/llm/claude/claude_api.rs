@@ -49,8 +49,6 @@ pub fn send_request_stream(
             .header("anthropic-version", HeaderValue::from_static("2023-06-01"))
             .header(header::ACCEPT, HeaderValue::from_static("text/event-stream"));
 
-        debug!("request: {request:#?}");
-        debug!("Json-data: {}", serde_json::to_string(&req.data).unwrap());
         let res = request
             .send()
             .await?;
@@ -174,7 +172,9 @@ mod test {
             stream: false,
         };
 
-        let expect = expect![[r#"{"model":"model","messages":[{"role":"user","content":"Some user msg"},{"role":"assistant","content":"Some Assitant msg"}],"max_tokens":200,"stream":false}"#]];
+        let expect = expect![[
+            r#"{"model":"model","messages":[{"role":"user","content":"Some user msg"},{"role":"assistant","content":"Some Assitant msg"}],"max_tokens":200,"stream":false}"#
+        ]];
         expect.assert_eq(&serde_json::to_string(&body).unwrap());
     }
 }

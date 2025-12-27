@@ -6,6 +6,7 @@ use std::{
 use color_eyre::{Result, eyre::eyre};
 use engine::{
     game::{Game, Image, TurnOutput},
+    llm::OutputMessage,
     save_archive::SaveArchive,
 };
 use iced::{Element, Task, widget::text_editor};
@@ -81,6 +82,7 @@ pub enum Message {
     UpdateActionText(text_editor::Action),
     ProposedActionButtonPressed(String),
     Submit,
+    SummaryFinished(Result<Option<OutputMessage>, StringError>),
 }
 
 #[derive(Debug, Default)]

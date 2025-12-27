@@ -46,7 +46,7 @@ impl InputMessage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutputMessage {
     pub input_tokens: usize,
     pub output_tokens: usize,

@@ -214,13 +214,16 @@ mod tests {
         for i in 0..(turns / 8) {
             summaries.push(crate::game::Summary {
                 content: format!("Summary at turn {}", i * 10),
-                age: i * 10,
+                bday: i * 10,
             });
         }
 
         let mut turn_data = vec![];
         for i in 0..turns {
-            let input = crate::game::TurnInput::PlayerAction(format!("Do action {}", i));
+            let input = crate::game::TurnInput {
+                player_action: Some(format!("Do action {}", i)),
+                gm_instruction: None,
+            };
             let output = crate::game::TurnOutput {
                 text: format!("Result of action {}", i),
                 secret_info: format!("Secret info {}", i),

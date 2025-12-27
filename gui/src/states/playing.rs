@@ -7,17 +7,19 @@ use iced::{
     alignment::{Horizontal, Vertical},
     padding,
     widget::{
-        self, Button, Column, button, container, image::Handle, markdown, row, scrollable, space,
-        text_editor,
+        self, Button, Column, button, container,
+        image::Handle,
+        markdown::{self, Content},
+        row, scrollable, space,
+        text_editor::{self, Edit},
     },
 };
 use nonempty::nonempty;
 
-use crate::{Context, Message, State, StringError, cmd};
+use crate::{Context, Message, State, StateCommand, StringError, cmd};
 
 #[derive(Debug)]
 pub struct Playing {
-    /// whether we're currently expecting incoming streaming data
     sub_state: SubState,
     current_output: String,
     markdown: Vec<markdown::Item>,
@@ -36,12 +38,31 @@ impl Playing {
         }
     }
 
+    fn request_summary(
+        &mut self,
+        ctx: &mut Context,
+        input: TurnInput,
+        output: TurnOutput,
+        image: Image,
+    ) -> Result<StateCommand> {
+        self.sub_state = SubState::WaitingForSummary {
+            input,
+            output,
+            image,
+        };
+        let fut = ctx.game.mk_summary_if_neccessary();
+        cmd::task(Task::perform(fut, |res| {
+            Message::SummaryFinished(res.map_err(StringError::from))
+        }))
+    }
+
     fn complete_turn(
         &mut self,
         ctx: &mut Context,
         input: TurnInput,
         output: TurnOutput,
         image: Image,
+        summary: Option<String>,
     ) -> Result<()> {
         let id = ctx.save.append_image(&image.jpeg_bytes)?;
         ctx.game.update(
@@ -49,9 +70,11 @@ impl Playing {
             output.clone(),
             nonempty![id],
             nonempty![image.caption],
+            summary,
         )?;
         ctx.save.write_game_data(ctx.game.get_data())?;
         self.sub_state = SubState::Complete(output);
+        self.action_text_content = text_editor::Content::default();
         Ok(())
     }
 }
@@ -65,6 +88,11 @@ enum SubState {
         input: TurnInput,
         output: Option<TurnOutput>,
         image: Option<Image>,
+    },
+    WaitingForSummary {
+        input: TurnInput,
+        output: TurnOutput,
+        image: Image,
     },
 }
 
@@ -88,16 +116,15 @@ impl State for Playing {
                 };
 
                 if let Some(image) = image {
-                    self.complete_turn(ctx, input, output, image)?;
+                    self.request_summary(ctx, input, output, image)
                 } else {
                     self.sub_state = SubState::WaitingForOutput {
                         input,
                         output: Some(output),
                         image: None,
                     };
+                    cmd::none()
                 }
-
-                cmd::none()
             }
             Message::NewTextFragment(t) => {
                 self.current_output.push_str(&t?);
@@ -142,8 +169,12 @@ impl State for Playing {
                 }
             },
             Message::UpdateActionText(action) => {
-                self.action_text_content.perform(action);
-                cmd::none()
+                if let text_editor::Action::Edit(Edit::Enter) = action {
+                    cmd::task(Task::done(Message::Submit))
+                } else {
+                    self.action_text_content.perform(action);
+                    cmd::none()
+                }
             }
             Message::ProposedActionButtonPressed(s) => {
                 if self.action_text_content.text() == s {
@@ -154,7 +185,7 @@ impl State for Playing {
                 }
             }
             Message::Submit => {
-                let input = TurnInput::PlayerAction(self.action_text_content.text());
+                let input = TurnInput::player_action(self.action_text_content.text());
                 self.current_output.clear();
                 let AdvanceResult {
                     text_stream,
@@ -193,15 +224,26 @@ impl State for Playing {
                 };
 
                 if let Some(output) = output {
-                    self.complete_turn(ctx, input, output, img)?;
+                    self.request_summary(ctx, input, output, img)
                 } else {
                     self.sub_state = SubState::WaitingForOutput {
                         input,
                         output: None,
                         image: Some(img),
                     };
+                    cmd::none()
                 }
-
+            }
+            Message::SummaryFinished(output_message) => {
+                let SubState::WaitingForSummary {
+                    input,
+                    output,
+                    image,
+                } = mem::take(&mut self.sub_state)
+                else {
+                    bail!("Not in Waiting For Summary while receiving SummaryFinished");
+                };
+                self.complete_turn(ctx, input, output, image, output_message?.map(|m| m.text))?;
                 cmd::none()
             }
         }
@@ -211,7 +253,7 @@ impl State for Playing {
         let mut sidebar = Column::new();
         if let Some((handle, caption)) = &self.image_data {
             sidebar = sidebar.extend([
-                container(widget::image(handle).width(Length::Fill))
+                container(widget::image(handle).height(Length::Fill))
                     .max_width(800)
                     .into(),
                 widget::text(caption).into(),
@@ -232,7 +274,7 @@ impl State for Playing {
                         proposed_action_button(&output.proposed_next_actions[1]).width(button_w),
                         proposed_action_button(&output.proposed_next_actions[2]).width(button_w),
                         widget::Space::new().height(10),
-                        text_editor(&self.action_text_content)
+                        widget::text_editor(&self.action_text_content)
                             .placeholder("Type an action")
                             .on_action(Message::UpdateActionText)
                             .width(button_w),
@@ -250,8 +292,7 @@ impl State for Playing {
                 container(main_col.align_x(Horizontal::Center))
                     .padding(padding::all(10.).right(20.))
             ))
-            .max_width(700)
-            .width(Length::Shrink)
+            .width(700)
             .padding(10)
             .style(
                 |_theme| container::background(Background::Color(Color::from_rgb(
