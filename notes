@@ -1,10 +1,6 @@
 Todos:
 
-- The image description lands in the TurnOutput::text field. Not the idea. Maybe in its own field.
-- The Caption is in the wrong place in the gui
-- the image should probably be 800x1200 or something like that, or let the AI decide.
 - game::send_to_llm is in urgent need of a refactor
-- cost of image generation is returned nowhere
 
 Critical missing features:
 
@@ -26,3 +22,8 @@ Missing features:
 - configure tokens without cli
 - display of costs
 - theming not working
+
+Layout things to fix:
+
+- text-area doesn't shrink. Sidebar does
+- image caption is way too far away from the image

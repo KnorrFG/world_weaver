@@ -12,9 +12,9 @@ use tokio::time::sleep;
 pub struct StartResponse {
     pub id: String,
     pub polling_url: String,
-    pub cost: f32,
-    pub input_mp: f32,
-    pub output_mp: f32,
+    pub cost: f64,
+    pub input_mp: f64,
+    pub output_mp: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,7 +39,9 @@ pub struct PollResult {
 pub async fn query(prompt: &str, api_key: &str, client: &reqwest::Client) -> Result<StartResponse> {
     let payload = serde_json::json!({
         "prompt": prompt,
-        "model": "flux-2-pro"
+        "model": "flux-2-pro",
+        "width": 800,
+        "height": 1200,
     });
 
     let resp = client

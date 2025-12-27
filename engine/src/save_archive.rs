@@ -196,6 +196,7 @@ fn write_header(file: &mut File, header: &SaveHeader) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nonempty::nonempty;
     use std::collections::BTreeMap;
     use tempfile::NamedTempFile;
 
@@ -235,7 +236,8 @@ mod tests {
                 summary_before_input: if i == 0 { None } else { Some(i - 1) },
                 input,
                 output,
-                image_ids: vec![i],
+                image_ids: nonempty![i],
+                image_captions: nonempty![format!("caption {i}")],
             });
         }
 

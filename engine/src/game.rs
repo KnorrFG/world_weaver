@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, pin::Pin};
 use crate::{
     HIST_SIZE, ImgModBox, LLMBox, N_PROPOSED_OPTIONS,
     game::stream_finder::{MatchResult, StreamFinder},
+    image_model,
     llm::{InputMessage, OutputMessage, Request, ResponseFragment},
 };
 
@@ -224,11 +225,18 @@ async fn get_image(
     rx_img_description: oneshot::Receiver<ImageDescription>,
     imgmod: ImgModBox,
 ) -> Result<Image> {
-    let description = rx_img_description.await?;
-    let bytes = imgmod.get_image(&description.description).await?;
+    let ImageDescription {
+        description,
+        caption,
+    } = rx_img_description.await?;
+
+    let image_model::Image { data, cost } = imgmod.get_image(&description).await?;
+
     Ok(Image {
-        caption: description.caption,
-        jpeg_bytes: bytes,
+        caption: caption,
+        description,
+        cost,
+        jpeg_bytes: data,
     })
 }
 
@@ -395,6 +403,8 @@ pub struct TurnData {
 #[derive(Debug, Clone)]
 pub struct Image {
     pub caption: String,
+    pub description: String,
+    pub cost: f64,
     pub jpeg_bytes: Vec<u8>,
 }
 
@@ -432,7 +442,12 @@ impl TryFrom<OutputMessage> for TurnOutput {
     type Error = color_eyre::Report;
 
     fn try_from(value: OutputMessage) -> std::result::Result<Self, Self::Error> {
-        let parts = value.text.split("<<<EOO>>>").collect::<Vec<&str>>();
+        let parts = value.text.split("<<<EOIC>>>").collect::<Vec<&str>>();
+        let [_, text] = parts[..] else {
+            bail!("no <<<EOID>>> in output");
+        };
+
+        let parts = text.split("<<<EOO>>>").collect::<Vec<&str>>();
         let [output, tail] = parts[..] else {
             bail!("No <<<EOO>>> in output");
         };

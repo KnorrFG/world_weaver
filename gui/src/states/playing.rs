@@ -3,7 +3,9 @@ use std::mem;
 use color_eyre::{Result, eyre::bail};
 use engine::game::{AdvanceResult, Image, StartResultOrData, TurnInput, TurnOutput};
 use iced::{
-    Length, Task, Theme, padding,
+    Alignment, Background, Color, Element, Length, Task, Theme,
+    alignment::{Horizontal, Vertical},
+    padding,
     widget::{
         self, Button, Column, button, container, image::Handle, markdown, row, scrollable, space,
         text_editor,
@@ -206,51 +208,62 @@ impl State for Playing {
     }
 
     fn view<'a>(&'a self, _ctx: &'a crate::Context) -> iced::Element<'a, Message> {
-        let side_bar_width = 400;
         let mut sidebar = Column::new();
         if let Some((handle, caption)) = &self.image_data {
-            sidebar = sidebar.push(widget::column![
-                widget::image(handle).width(side_bar_width),
-                widget::text(caption).center(),
+            sidebar = sidebar.extend([
+                container(widget::image(handle).width(Length::Fill))
+                    .max_width(800)
+                    .into(),
+                widget::text(caption).into(),
             ]);
         };
+
+        let mut main_col = widget::column![
+            markdown::view(&self.markdown, Theme::TokyoNight).map(|_| unreachable!())
+        ];
+
         if let SubState::Complete(output) = &self.sub_state {
-            sidebar = sidebar
-                .extend([
-                    proposed_action_button(&output.proposed_next_actions[0])
-                        .width(side_bar_width)
-                        .into(),
-                    proposed_action_button(&output.proposed_next_actions[1])
-                        .width(side_bar_width)
-                        .into(),
-                    proposed_action_button(&output.proposed_next_actions[2])
-                        .width(side_bar_width)
-                        .into(),
-                    text_editor(&self.action_text_content)
-                        .placeholder("Type an action")
-                        .on_action(Message::UpdateActionText)
-                        .width(side_bar_width)
-                        .into(),
-                    row![space::horizontal(), button("Go").on_press(Message::Submit)]
-                        .width(side_bar_width)
-                        .into(),
-                ])
+            let button_w = 500;
+            main_col = main_col
+                .push(
+                    widget::column![
+                        widget::Space::new().height(20),
+                        proposed_action_button(&output.proposed_next_actions[0]).width(button_w),
+                        proposed_action_button(&output.proposed_next_actions[1]).width(button_w),
+                        proposed_action_button(&output.proposed_next_actions[2]).width(button_w),
+                        widget::Space::new().height(10),
+                        text_editor(&self.action_text_content)
+                            .placeholder("Type an action")
+                            .on_action(Message::UpdateActionText)
+                            .width(button_w),
+                        row![space::horizontal(), button("Go").on_press(Message::Submit)]
+                    ]
+                    .max_width(500)
+                    .spacing(15),
+                )
                 .spacing(10)
                 .into();
         }
 
         let main_row = row![
-            scrollable(
-                container(
-                    markdown::view(&self.markdown, Theme::TokyoNight).map(|_| unreachable!())
-                )
-                .padding(padding::all(10.).right(20.))
-                .max_width(600)
+            container(scrollable(
+                container(main_col.align_x(Horizontal::Center))
+                    .padding(padding::all(10.).right(20.))
+            ))
+            .max_width(700)
+            .width(Length::Shrink)
+            .padding(10)
+            .style(
+                |_theme| container::background(Background::Color(Color::from_rgb(
+                    0.95, 0.95, 0.95
+                )))
             ),
-            container(sidebar).padding(20)
-        ];
+            sidebar.align_x(Horizontal::Center).height(Length::Fill)
+        ]
+        .spacing(20);
 
-        container(main_row).center_x(Length::Fill).into()
+        Element::from(container(main_row).center_x(Length::Fill).padding(20))
+        // .explain(iced::Color::from_rgb(1., 0., 0.))
     }
 }
 
