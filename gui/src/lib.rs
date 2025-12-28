@@ -88,7 +88,9 @@ pub enum Message {
 
     PrevTurnButtonPressed,
     NextTurnButtonPressed,
-    // GotoTurnButtonPressed,
+    UpdateTurnInput(String),
+    GotoTurnPressed,
+    GoToCurrentTurn,
 }
 
 #[derive(Debug, Default)]

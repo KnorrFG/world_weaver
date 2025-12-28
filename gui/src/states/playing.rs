@@ -2,7 +2,7 @@ use std::mem;
 
 use color_eyre::{
     Result,
-    eyre::{bail, eyre},
+    eyre::{bail, ensure, eyre},
 };
 use engine::game::{AdvanceResult, Image, StartResultOrData, TurnData, TurnInput, TurnOutput};
 use iced::{
@@ -14,6 +14,7 @@ use iced::{
         image::Handle,
         markdown, row, scrollable, space,
         text_editor::{self, Edit},
+        text_input,
     },
 };
 use nonempty::nonempty;
@@ -24,6 +25,7 @@ use crate::{Context, Message, State, StateCommand, StringError, cmd, elem_list};
 pub struct Playing {
     sub_state: SubState,
     current_output: String,
+    goto_turn_input: Option<usize>,
     markdown: Vec<markdown::Item>,
     action_text_content: text_editor::Content,
     gm_instruction_text_content: text_editor::Content,
@@ -40,6 +42,7 @@ impl Playing {
         Self {
             sub_state: SubState::Uninit,
             current_output: "".into(),
+            goto_turn_input: None,
             action_text_content: text_editor::Content::default(),
             gm_instruction_text_content: text_editor::Content::default(),
             markdown: vec![],
@@ -144,6 +147,13 @@ impl Playing {
             } => *completed_turn + 1,
             _ => ctx.game.current_turn(),
         }
+    }
+
+    fn goto_turn_string(&self) -> String {
+        self.goto_turn_input
+            .as_ref()
+            .map(|x| x.to_string())
+            .unwrap_or("".into())
     }
 }
 
@@ -355,6 +365,24 @@ impl State for Playing {
                 self.load_completed_turn(ctx, target_turn)?;
                 cmd::none()
             }
+            Message::UpdateTurnInput(inp) => {
+                self.goto_turn_input = inp.parse().ok();
+                cmd::none()
+            }
+            Message::GotoTurnPressed => {
+                if let Some(target) = self.goto_turn_input {
+                    ensure!(
+                        (1..=ctx.game.current_turn()).contains(&target),
+                        "Invalid turn number"
+                    );
+                    self.load_completed_turn(ctx, target - 1)?;
+                }
+                cmd::none()
+            }
+            Message::GoToCurrentTurn => {
+                self.load_completed_turn(ctx, ctx.game.current_turn() - 1)?;
+                cmd::none()
+            }
         }
     }
 
@@ -384,20 +412,31 @@ impl State for Playing {
             .into_iter()
             .chain([
                 widget::rule::horizontal(1).into(),
-                mk_turn_selection_buttons(ctx, ctx.game.current_turn()).into(),
+                mk_turn_selection_buttons(ctx, ctx.game.current_turn(), &self.goto_turn_string())
+                    .into(),
             ])
             .collect(),
             SubState::InThePast {
                 completed_turn: turn,
                 _data,
             } => {
-                vec![mk_turn_selection_buttons(ctx, *turn).into()]
+                vec![
+                    mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()).into(),
+                    button("Goto current turn")
+                        .on_press(Message::GoToCurrentTurn)
+                        .into(),
+                ]
             }
             _ => vec![],
         };
 
         main_col = main_col
-            .push(widget::column(elems).max_width(500).spacing(15))
+            .push(
+                widget::column(elems)
+                    .max_width(500)
+                    .spacing(15)
+                    .align_x(Horizontal::Center),
+            )
             .spacing(10);
 
         let text_row = row![
@@ -443,16 +482,22 @@ fn proposed_action_button<'a>(text: &'a str) -> Button<'a, Message> {
     button(text).on_press(Message::ProposedActionButtonPressed(text.into()))
 }
 
-fn mk_turn_selection_buttons(
-    ctx: &Context,
+fn mk_turn_selection_buttons<'a>(
+    ctx: &'a Context,
     current_turn: usize,
-) -> impl Into<Element<'_, Message>> {
+    goto_turn_input: &str,
+) -> impl Into<Element<'a, Message>> {
     let mut row = widget::Row::new();
     if current_turn > 0 {
         row = row.push(widget::button("←").on_press(Message::PrevTurnButtonPressed));
     }
     row = row.push(widget::space::horizontal());
-    row = row.push(widget::button("Goto Turn"));
+    row = row.push(
+        text_input("turn", goto_turn_input)
+            .on_input(Message::UpdateTurnInput)
+            .on_submit(Message::GotoTurnPressed),
+    );
+    row = row.push(widget::button("Goto Turn").on_press(Message::GotoTurnPressed));
     row = row.push(widget::space::horizontal());
     if current_turn < ctx.game.current_turn() - 1 {
         row = row.push(widget::button("→").on_press(Message::NextTurnButtonPressed));
