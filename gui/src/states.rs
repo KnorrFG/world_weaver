@@ -3,3 +3,6 @@
 
 mod playing;
 pub use playing::Playing;
+
+mod error;
+pub use error::Error;

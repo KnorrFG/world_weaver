@@ -20,6 +20,21 @@ const APP_NAME: &str = "World Weaver";
 pub trait State: fmt::Debug {
     fn update(&mut self, event: Message, ctx: &mut Context) -> Result<StateCommand>;
     fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, Message>;
+    fn clone(&self) -> Box<dyn State>;
+}
+
+impl<T: std::ops::DerefMut<Target = dyn State> + fmt::Debug> State for T {
+    fn update(&mut self, event: Message, ctx: &mut Context) -> Result<StateCommand> {
+        self.deref_mut().update(event, ctx)
+    }
+
+    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, Message> {
+        self.deref().view(ctx)
+    }
+
+    fn clone(&self) -> Box<dyn State> {
+        self.deref().clone()
+    }
 }
 
 pub struct Gui {
@@ -36,14 +51,23 @@ impl Gui {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
-        let cmd = self
-            .state
-            .update(message, &mut self.ctx)
-            .expect("update failed");
-        if let Some(new_state) = cmd.transition {
-            self.state = new_state;
+        let cmd = self.state.update(message, &mut self.ctx);
+
+        match cmd {
+            Ok(cmd) => {
+                if let Some(new_state) = cmd.transition {
+                    self.state = new_state;
+                }
+                cmd.task.unwrap_or(Task::none())
+            }
+            Err(e) => {
+                self.state = Box::new(states::Error {
+                    message: e.to_string(),
+                    parent_state: Some(self.state.clone()),
+                });
+                Task::none()
+            }
         }
-        cmd.task.unwrap_or(Task::none())
     }
 
     pub fn view(&self) -> Element<Message> {
@@ -91,6 +115,7 @@ pub enum Message {
     UpdateTurnInput(String),
     GotoTurnPressed,
     GoToCurrentTurn,
+    ErrorConfirmed,
 }
 
 #[derive(Debug, Default)]
@@ -181,3 +206,5 @@ macro_rules! elem_list {
     };
 }
 pub(crate) use elem_list;
+
+use crate::states::Error;

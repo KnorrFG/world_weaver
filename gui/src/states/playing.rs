@@ -21,7 +21,7 @@ use nonempty::nonempty;
 
 use crate::{Context, Message, State, StateCommand, StringError, cmd, elem_list};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Playing {
     sub_state: SubState,
     current_output: String,
@@ -157,7 +157,7 @@ impl Playing {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 enum SubState {
     #[default]
     Uninit,
@@ -383,6 +383,9 @@ impl State for Playing {
                 self.load_completed_turn(ctx, ctx.game.current_turn() - 1)?;
                 cmd::none()
             }
+            other @ Message::ErrorConfirmed => {
+                bail!("unexpected message: {other:?}")
+            }
         }
     }
 
@@ -390,11 +393,13 @@ impl State for Playing {
         let mut sidebar = Column::new();
         if let Some((handle, caption)) = &self.image_data {
             sidebar = sidebar.extend([
-                container(widget::image(handle).height(Length::Fill))
-                    .max_width(800)
+                container(widget::image(handle))
+                    .height(Length::Fill)
+                    .max_width(832)
                     .into(),
                 widget::text(caption).into(),
             ]);
+            // .width(Length::Shrink);
         };
 
         let mut main_col = widget::column![
@@ -475,6 +480,10 @@ impl State for Playing {
                 .padding(padding::top(20)),
         )
         // .explain(iced::Color::from_rgb(1., 0., 0.))
+    }
+
+    fn clone(&self) -> Box<dyn State> {
+        Box::new(Clone::clone(self))
     }
 }
 
