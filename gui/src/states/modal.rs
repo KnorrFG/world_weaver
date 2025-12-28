@@ -8,6 +8,7 @@ use iced::{
 
 use crate::{Context, Message, State, StateCommand, cmd};
 
+pub mod confirm;
 pub mod error;
 
 pub trait Dialog: fmt::Debug {

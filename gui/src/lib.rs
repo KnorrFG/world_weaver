@@ -116,7 +116,10 @@ pub enum Message {
     GotoTurnPressed,
     GoToCurrentTurn,
     ErrorConfirmed,
-    // LoadGameFromCurrentPast,
+    ConfirmDialogYes,
+    ConfirmDialogNo,
+    LoadGameFromCurrentPastButtonPressed,
+    ConfirmLoadGameFromCurrentPast,
 }
 
 #[derive(Debug, Default)]

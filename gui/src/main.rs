@@ -72,7 +72,7 @@ fn create_or_load_game(mb_state: PersistedState, cli: &Cli) -> Result<(Game, Sav
             let save_path = default_save_path()?;
             fs::create_dir_all(save_path.parent().unwrap())?;
             let mut archive = SaveArchive::create(save_path)?;
-            archive.write_game_data(game.get_data())?;
+            archive.write_game_data(&game.data)?;
             save_persisted_state(&PersistedState {
                 claude_token: Some(claude_token),
                 flux_token: Some(flux_token),

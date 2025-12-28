@@ -23,9 +23,9 @@ mod stream_finder;
 const SUMMARY_INTERVAL: usize = 8;
 
 pub struct Game {
-    llm: LLMBox,
-    imgmod: ImgModBox,
-    data: GameData,
+    pub llm: LLMBox,
+    pub imgmod: ImgModBox,
+    pub data: GameData,
 }
 
 impl Clone for Game {
@@ -170,10 +170,6 @@ impl Game {
             text_stream: Box::pin(stream),
             round_output: Box::pin(async move { Ok(rx_output.await?) }),
         }
-    }
-
-    pub fn get_data(&self) -> &GameData {
-        &self.data
     }
 
     pub fn current_turn(&self) -> usize {

@@ -19,7 +19,10 @@ use iced::{
 };
 use nonempty::nonempty;
 
-use crate::{Context, Message, State, StateCommand, StringError, cmd, elem_list};
+use crate::{
+    Context, Message, State, StateCommand, StringError, cmd, elem_list,
+    states::{Modal, modal::confirm::ConfirmDialog},
+};
 
 #[derive(Debug, Clone)]
 pub struct Playing {
@@ -84,11 +87,15 @@ impl Playing {
             nonempty![image.caption],
             summary,
         )?;
-        ctx.save.write_game_data(ctx.game.get_data())?;
+        ctx.save.write_game_data(&ctx.game.data)?;
         self.sub_state = SubState::Complete(output);
+        self.reset_action_editors();
+        Ok(())
+    }
+
+    fn reset_action_editors(&mut self) {
         self.action_text_content = text_editor::Content::default();
         self.gm_instruction_text_content = text_editor::Content::default();
-        Ok(())
     }
 
     fn update_editor_content(
@@ -111,7 +118,7 @@ impl Playing {
     fn load_completed_turn(&mut self, ctx: &mut Context, target_turn: usize) -> Result<()> {
         let turn_data = ctx
             .game
-            .get_data()
+            .data
             .turn_data
             .get(target_turn)
             .ok_or(eyre!("Invalid target turn: {target_turn}"))?;
@@ -128,7 +135,7 @@ impl Playing {
         } else {
             self.sub_state = SubState::InThePast {
                 completed_turn: target_turn,
-                _data: turn_data.clone(),
+                data: turn_data.clone(),
             };
         }
         Ok(())
@@ -143,7 +150,7 @@ impl Playing {
         match &self.sub_state {
             SubState::InThePast {
                 completed_turn,
-                _data,
+                data: _data,
             } => *completed_turn + 1,
             _ => ctx.game.current_turn(),
         }
@@ -174,13 +181,17 @@ enum SubState {
     },
     InThePast {
         completed_turn: usize,
-        _data: TurnData,
+        data: TurnData,
     },
 }
 
 impl SubState {
     fn is_complete(&self) -> bool {
         matches!(self, Self::Complete(_))
+    }
+
+    fn take(&mut self) -> Self {
+        mem::take(self)
     }
 }
 
@@ -198,7 +209,7 @@ impl State for Playing {
                     input,
                     output: _,
                     image,
-                } = mem::take(&mut self.sub_state)
+                } = self.sub_state.take()
                 else {
                     bail!("Not in WaitingForOutput substate when receiving OutputComplete");
                 };
@@ -383,7 +394,31 @@ impl State for Playing {
                 self.load_completed_turn(ctx, ctx.game.current_turn() - 1)?;
                 cmd::none()
             }
-            other @ Message::ErrorConfirmed => {
+            Message::LoadGameFromCurrentPastButtonPressed => cmd::transition(Modal::new(
+                State::clone(self),
+                ConfirmDialog::new(
+                    "Do you really want to load the Game from here?\nThis will delete all unsafed progress.",
+                    Some(Message::ConfirmLoadGameFromCurrentPast),
+                    None,
+                ),
+            )),
+            Message::ConfirmLoadGameFromCurrentPast => {
+                let SubState::InThePast {
+                    completed_turn,
+                    data,
+                } = self.sub_state.take()
+                else {
+                    bail!("ConfirmLoadGameFromPast received, but not in SubState::InThePast");
+                };
+                ctx.save.clip_after_turn(completed_turn)?;
+                ctx.game.data = ctx.save.read_game_data()?;
+                self.sub_state = SubState::Complete(data.output);
+                self.reset_action_editors();
+                cmd::none()
+            }
+            other @ (Message::ErrorConfirmed
+            | Message::ConfirmDialogYes
+            | Message::ConfirmDialogNo) => {
                 bail!("unexpected message: {other:?}")
             }
         }
@@ -423,7 +458,7 @@ impl State for Playing {
             .collect(),
             SubState::InThePast {
                 completed_turn: turn,
-                _data,
+                data: _data,
             } => {
                 vec![
                     mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()).into(),
@@ -431,7 +466,7 @@ impl State for Playing {
                         .on_press(Message::GoToCurrentTurn)
                         .into(),
                     button("Load game from here")
-                        // .on_press(Message::LoadGameFromCurrentPast)
+                        .on_press(Message::LoadGameFromCurrentPastButtonPressed)
                         .into(),
                 ]
             }
