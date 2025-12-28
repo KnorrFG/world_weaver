@@ -177,6 +177,41 @@ impl SaveArchive {
         self.file.read_exact(&mut buf)?;
         Ok(buf)
     }
+
+    pub fn clip_after_turn(&mut self, turn: usize) -> Result<()> {
+        let mut gd = self.read_game_data()?;
+        ensure!(turn < gd.turn_data.len(), "Invalid turn: {turn}");
+        gd.turn_data = gd.turn_data[..=turn].to_vec();
+
+        let latest_turn = gd.turn_data.last().unwrap();
+        let latest_summary_idx = latest_turn.summary_before_input;
+        if let Some(i) = latest_summary_idx {
+            gd.summaries = gd.summaries[..=i].to_vec();
+        } else {
+            gd.summaries.clear();
+        }
+
+        let latest_image = *latest_turn.image_ids.last();
+        ensure!(
+            latest_image < self.image_index.len(),
+            "Image index out of sync with game data"
+        );
+
+        self.image_index = self.image_index[..=latest_image].to_vec();
+        self.header.index_offset = if let Some((offset, length)) = self.image_index.last() {
+            offset + length
+        } else {
+            Self::HEADER_SIZE + Self::DEFAULT_GAME_DATA_SIZE
+        };
+        let serialized_index = serde_binary::to_vec(&self.image_index, Endian::Little)?;
+        self.file.set_len(self.header.index_offset)?;
+        self.file.seek(SeekFrom::End(0))?;
+        self.file.write_all(&serialized_index)?;
+        self.header.index_size = serialized_index.len() as u64;
+
+        // this will also write the updated header
+        self.write_game_data(&gd)
+    }
 }
 
 fn read_header(file: &mut File) -> Result<SaveHeader> {
@@ -213,16 +248,16 @@ mod tests {
         let mut summaries = vec![];
         for i in 0..(turns / 8) {
             summaries.push(crate::game::Summary {
-                content: format!("Summary at turn {}", i * 10),
-                bday: i * 10,
+                content: format!("Summary at turn {}", i * 8),
+                bday: i * 8,
             });
         }
 
         let mut turn_data = vec![];
         for i in 0..turns {
             let input = crate::game::TurnInput {
-                player_action: Some(format!("Do action {}", i)),
-                gm_instruction: None,
+                player_action: format!("Do action {}", i),
+                gm_instruction: "".into(),
             };
             let output = crate::game::TurnOutput {
                 text: format!("Result of action {}", i),
@@ -234,9 +269,15 @@ mod tests {
                 ],
                 input_tokens: 5,
                 output_tokens: 10,
+                image_description: format!("image_description {i}"),
+                image_caption: format!("image_description {i}"),
             };
             turn_data.push(crate::game::TurnData {
-                summary_before_input: if i == 0 { None } else { Some(i - 1) },
+                summary_before_input: if i < 8 {
+                    None
+                } else {
+                    Some((i as f32 / 8.).floor() as usize - 1)
+                },
                 input,
                 output,
                 image_ids: nonempty![i],
@@ -322,6 +363,63 @@ mod tests {
 
         let err = archive.read_image(999).unwrap_err();
         assert!(err.to_string().contains("Image ID not found"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn clip_after_turn_truncates_turns_summaries_and_images() -> Result<()> {
+        let tmpfile = NamedTempFile::new()?;
+        let path = tmpfile.path();
+
+        let total_turns = 12;
+        let clip_turn = 5;
+
+        // Create archive and populate it
+        {
+            let mut archive = SaveArchive::create(path)?;
+
+            let game_data = make_sample_game_data(total_turns);
+            archive.write_game_data(&game_data)?;
+
+            // Append one image per turn (ids 0..total_turns-1)
+            for i in 0..total_turns {
+                archive.append_image(&vec![i as u8; 4])?;
+            }
+        }
+
+        // Clip
+        {
+            let mut archive = SaveArchive::open(path)?;
+            archive.clip_after_turn(clip_turn)?;
+        }
+
+        // Reopen and validate
+        let mut archive = SaveArchive::open(path)?;
+        let gd = archive.read_game_data()?;
+
+        // Turns truncated
+        assert_eq!(gd.turn_data.len(), clip_turn + 1);
+
+        // Summaries truncated consistently
+        let last_turn = gd.turn_data.last().unwrap();
+        if let Some(summary_idx) = last_turn.summary_before_input {
+            assert_eq!(gd.summaries.len(), summary_idx + 1);
+        }
+
+        // Images before clip are readable
+        let last_image_id = *last_turn.image_ids.last();
+        for i in 0..=last_image_id {
+            let img = archive.read_image(i)?;
+            assert_eq!(img, vec![i as u8; 4]);
+        }
+
+        // Images after clip are gone
+        let err = archive.read_image(last_image_id + 1).unwrap_err();
+        assert!(
+            err.to_string().contains("Image ID not found"),
+            "expected missing image error, got: {err}"
+        );
 
         Ok(())
     }

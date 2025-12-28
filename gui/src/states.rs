@@ -4,5 +4,5 @@
 mod playing;
 pub use playing::Playing;
 
-mod error;
-pub use error::Error;
+pub mod modal;
+pub use modal::{Dialog, Modal};

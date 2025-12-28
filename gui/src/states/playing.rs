@@ -430,6 +430,9 @@ impl State for Playing {
                     button("Goto current turn")
                         .on_press(Message::GoToCurrentTurn)
                         .into(),
+                    button("Load game from here")
+                        // .on_press(Message::LoadGameFromCurrentPast)
+                        .into(),
                 ]
             }
             _ => vec![],

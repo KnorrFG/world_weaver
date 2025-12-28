@@ -1,20 +1,21 @@
 Todos:
 
-- game::send_to_llm is in urgent need of a refactor
+- load from past
+- regenerate turn
+- integrate recraft.ai
+- access all information in the game, including hidden information, image descriptions, etc
 
 Critical missing features:
 
 - Summary
 - skip to turns and load from there
 
+other:
+	- game::send_to_llm is in urgent need of a refactor
 
 Missing features:
 
-
-- access all information in the game, including hidden information, image descriptions, etc
-- regenerate turn
 - world editor
-- appropriate error handling
 - editing world ingame
 - image styles
 - exporting world from save
@@ -26,5 +27,4 @@ Missing features:
 
 Layout things to fix:
 
-- text-area doesn't shrink. Sidebar does
 - image caption is way too far away from the image

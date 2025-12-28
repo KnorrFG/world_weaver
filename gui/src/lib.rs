@@ -61,10 +61,10 @@ impl Gui {
                 cmd.task.unwrap_or(Task::none())
             }
             Err(e) => {
-                self.state = Box::new(states::Error {
-                    message: e.to_string(),
-                    parent_state: Some(self.state.clone()),
-                });
+                self.state = Box::new(Modal::new(
+                    self.state.clone(),
+                    ErrorDialog::new(e.to_string()),
+                ));
                 Task::none()
             }
         }
@@ -116,6 +116,7 @@ pub enum Message {
     GotoTurnPressed,
     GoToCurrentTurn,
     ErrorConfirmed,
+    // LoadGameFromCurrentPast,
 }
 
 #[derive(Debug, Default)]
@@ -207,4 +208,4 @@ macro_rules! elem_list {
 }
 pub(crate) use elem_list;
 
-use crate::states::Error;
+use crate::states::{Modal, modal::error::ErrorDialog};
