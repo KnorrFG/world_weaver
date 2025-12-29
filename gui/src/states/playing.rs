@@ -292,7 +292,10 @@ impl State for Playing {
                     text_stream,
                     round_output,
                     image,
-                } = ctx.game.send_to_llm(input.clone());
+                } = ctx.game.send_to_llm(
+                    input.clone(),
+                    ctx.game.imgmod.model().extra_generation_instructions(),
+                );
                 self.sub_state = SubState::WaitingForOutput {
                     input,
                     output: None,

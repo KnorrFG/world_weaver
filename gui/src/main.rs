@@ -10,7 +10,7 @@ use color_eyre::{
 };
 use engine::{
     game::{Game, WorldDescription},
-    image_model::Flux2,
+    image_model::{self, Flux2},
     llm::Claude,
     save_archive::SaveArchive,
 };
@@ -46,22 +46,21 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-fn create_or_load_game(mb_state: PersistedState, cli: &Cli) -> Result<(Game, SaveArchive)> {
+fn create_or_load_game(state: PersistedState, cli: &Cli) -> Result<(Game, SaveArchive)> {
     let claude_token = cli
         .claude_token
         .as_ref()
-        .or(mb_state.claude_token.as_ref())
+        .or(state.claude_token.as_ref())
         .ok_or_else(|| eyre!("No Claude-Token saved, please provide one via cli"))?
         .clone();
     let llm = Box::new(Claude::new(claude_token.clone(), CLAUDE_MODEL.into()));
 
-    let flux_token = cli
-        .flux_token
-        .as_ref()
-        .or(mb_state.flux_token.as_ref())
-        .ok_or_else(|| eyre!("No Flux-Token saved, please provide one via cli"))?
-        .clone();
-    let imgmod = Box::new(Flux2::new(flux_token.clone()));
+    let model = state.current_img_model.unwrap_or(image_model::Model::Flux2);
+    let key = state
+        .img_model_tokens
+        .get(&model.provider())
+        .ok_or(eyre!("No token for {model}"))?;
+    let imgmod = model.make(key.clone());
 
     match cli.command.as_ref() {
         Some(cli::Command::NewGame(cli::NewGame { world, player })) => {
@@ -73,10 +72,6 @@ fn create_or_load_game(mb_state: PersistedState, cli: &Cli) -> Result<(Game, Sav
             fs::create_dir_all(save_path.parent().unwrap())?;
             let mut archive = SaveArchive::create(save_path)?;
             archive.write_game_data(&game.data)?;
-            save_persisted_state(&PersistedState {
-                claude_token: Some(claude_token),
-                flux_token: Some(flux_token),
-            })?;
             Ok((game, archive))
         }
 

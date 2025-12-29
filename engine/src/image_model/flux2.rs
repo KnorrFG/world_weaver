@@ -5,6 +5,8 @@ use log::debug;
 
 use crate::image_model::{Image, ImageModel};
 
+use super::Model;
+
 pub mod flux2_api;
 
 #[derive(Clone)]
@@ -37,11 +39,18 @@ impl ImageModel for Flux2 {
                 flux2_api::poll_and_fetch(&response.polling_url, &self.api_key, &self.client)
                     .await
                     .with_context(|| format!("Image description:\n{description}"))?;
-            Ok(Image { data, cost })
+            Ok(Image {
+                data,
+                cost: Some(cost),
+            })
         })
     }
 
     fn clone(&self) -> Box<dyn ImageModel + Send + 'static> {
         Box::new(Clone::clone(self))
+    }
+
+    fn model(&self) -> Model {
+        Model::Flux2
     }
 }

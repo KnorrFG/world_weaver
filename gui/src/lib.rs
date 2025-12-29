@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt, fs,
     path::{Path, PathBuf},
 };
@@ -6,6 +7,7 @@ use std::{
 use color_eyre::{Result, eyre::eyre};
 use engine::{
     game::{Game, Image, TurnOutput},
+    image_model,
     llm::OutputMessage,
     save_archive::SaveArchive,
 };
@@ -164,7 +166,8 @@ pub const PERSISTENT_INFO_NAME: &str = "persisted_info";
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PersistedState {
     pub claude_token: Option<String>,
-    pub flux_token: Option<String>,
+    pub current_img_model: Option<image_model::Model>,
+    pub img_model_tokens: HashMap<image_model::ModelProvider, String>,
 }
 
 pub fn load_json_file<T: DeserializeOwned>(world: &Path) -> Result<T> {

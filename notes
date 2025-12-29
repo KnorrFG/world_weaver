@@ -1,7 +1,5 @@
 Todos:
 
-- load from past
-- regenerate turn
 - integrate recraft.ai
 - access all information in the game, including hidden information, image descriptions, etc
 
@@ -24,6 +22,7 @@ Missing features:
 - configure tokens without cli
 - display of costs
 - theming not working
+- regenerate turn
 
 Layout things to fix:
 

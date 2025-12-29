@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, pin::Pin};
 use crate::{
     HIST_SIZE, ImgModBox, LLMBox, N_PROPOSED_OPTIONS,
     game::stream_finder::{MatchResult, StreamFinder},
-    image_model,
+    image_model::{self, Model},
     llm::{InputMessage, OutputMessage, Request, ResponseFragment},
 };
 
@@ -80,11 +80,11 @@ impl Game {
         })
     }
 
-    pub fn send_to_llm(&self, input: TurnInput) -> AdvanceResult {
+    pub fn send_to_llm(&self, input: TurnInput, extra_img_infos: &str) -> AdvanceResult {
         let (tx_output, rx_output) = oneshot::channel();
         let (tx_img_description, rx_img_description) = oneshot::channel();
         let mut tx_img_description = Some(tx_img_description);
-        let req = self.data.construct_request(&input);
+        let req = self.data.construct_request(&input, extra_img_infos);
         let mut llm = self.llm.clone();
 
         let mut mode = SendToLLMState::ParsingImageDescription;
@@ -250,7 +250,13 @@ impl Game {
             StartResultOrData::Data(turn.clone())
         } else {
             let input = TurnInput::player_action(self.data.world_description.init_action.clone());
-            StartResultOrData::StartResult(self.send_to_llm(input.clone()), input)
+            StartResultOrData::StartResult(
+                self.send_to_llm(
+                    input.clone(),
+                    self.imgmod.model().extra_generation_instructions(),
+                ),
+                input,
+            )
         }
     }
 }
@@ -430,7 +436,7 @@ pub struct GameData {
 }
 
 impl GameData {
-    fn construct_request(&self, input: &TurnInput) -> Request {
+    fn construct_request(&self, input: &TurnInput, image_gen_extra_infos: &str) -> Request {
         let player = &self.pc;
         let world_description = &self.world_description.main_description;
         let pc_description = &self.world_description.pc_descriptions[&self.pc];
@@ -445,15 +451,16 @@ impl GameData {
            In that world, I control {player}. When I input anything, it's a command
            for {player} to execute in the world. Then it's your turn to decide and tell
            me how the world react to my input, and what happens. One pair of messages,
-           one from me + one from you is called a turn. For each turn, you will also
-           generate a description that can be passed to Flux2 to generate an image.
+           one from me + one from you is called a turn.
+
+           For each turn, you will also
+           generate a description that can be passed to an image model to generate an image.
            When describing characters in image descriptions use many details, and make
            sure they match the actual current character state to increase
            the likelyhood of characters looking the same everytime. Be consistent and
            precise, especially about hair style, clothes and accesories.
-           Also, make sure to formulate the image description in a way that avoids
-           image moderation because of sexual content. When you describe anatomy,
-           do it in a non-erotic way.
+           {image_gen_extra_infos}
+           
            
            My input will be structured like this: The turn number, followed by
            three sections, all optional, like this:
@@ -580,7 +587,7 @@ pub struct TurnData {
 pub struct Image {
     pub caption: String,
     pub description: String,
-    pub cost: f64,
+    pub cost: Option<f64>,
     pub jpeg_bytes: Vec<u8>,
 }
 
