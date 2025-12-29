@@ -42,6 +42,7 @@ pub fn main() -> Result<()> {
         Gui::update,
         Gui::view,
     )
+    // .theme(Gui::theme)
     .run()?;
     Ok(())
 }

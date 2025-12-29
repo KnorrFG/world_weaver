@@ -334,6 +334,7 @@ async fn create_new_summary(
             - No formatting beyond plain paragraphs unless explicitly requested.
             - Make sure to include all relevant information from the last summary
               and all provided turns, don't overweight the latest ones.
+            - You may drop the least important information to keep the word-limit.
 
             You are a summarization tool, not a storyteller.
         "#};
@@ -498,7 +499,9 @@ impl GameData {
            <<<EOO>>>
            *Secret info*:. Stuff that is related to output, but hidden from me,
            it's a note for yourself. Keep it real short 500 words at most. Don't repeat
-           information here that's already in the inputs or outputs.
+           information here that's already in the inputs or outputs. Use to track relevant
+           events that are not in the current scene, to note down hidden intentions, or plan
+           for future turns.
            <<<EOS>>>
            Proposed Action 1
            <<<EOA>>>
@@ -533,6 +536,8 @@ impl GameData {
            --- START SUMMARY ---
            {summary} 
            --- END SUMMARY ---
+
+           Make sure you respect the output-length limitation of at most 1500 words.
         "#};
 
         let messages = (0..self.turn_data.len())

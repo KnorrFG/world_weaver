@@ -11,7 +11,7 @@ use engine::{
     llm::OutputMessage,
     save_archive::SaveArchive,
 };
-use iced::{Element, Task, widget::text_editor};
+use iced::{Element, Task, Theme, widget::text_editor};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub mod cli;
@@ -24,6 +24,14 @@ pub trait State: fmt::Debug {
     fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, Message>;
     fn clone(&self) -> Box<dyn State>;
 }
+
+pub trait StateExt: State + Sized + 'static {
+    fn boxed(self) -> Box<dyn State> {
+        Box::new(self)
+    }
+}
+
+impl<T: State + Sized + 'static> StateExt for T {}
 
 impl<T: std::ops::DerefMut<Target = dyn State> + fmt::Debug> State for T {
     fn update(&mut self, event: Message, ctx: &mut Context) -> Result<StateCommand> {
@@ -63,10 +71,7 @@ impl Gui {
                 cmd.task.unwrap_or(Task::none())
             }
             Err(e) => {
-                self.state = Box::new(Modal::new(
-                    self.state.clone(),
-                    ErrorDialog::new(e.to_string()),
-                ));
+                self.state = Modal::message(self.state.clone(), "Error", e.to_string()).boxed();
                 Task::none()
             }
         }
@@ -74,6 +79,10 @@ impl Gui {
 
     pub fn view(&self) -> Element<Message> {
         self.state.view(&self.ctx)
+    }
+
+    pub fn theme(&self) -> Theme {
+        Theme::SolarizedLight
     }
 }
 
@@ -124,10 +133,13 @@ pub enum Message {
     ConfirmLoadGameFromCurrentPast,
     ShowHiddenText,
     UpdateHiddenInfo(String),
+    ShowImageDescription,
 
     SaveEditModal,
     CancelEditModal,
     UpdateEditModal(text_editor::Action),
+
+    MessageModalEditAction(text_editor::Action),
 }
 
 #[derive(Debug, Default)]
@@ -220,4 +232,4 @@ macro_rules! elem_list {
 }
 pub(crate) use elem_list;
 
-use crate::states::{Modal, modal::error::ErrorDialog};
+use crate::states::{Modal, modal::message::MessageDialog};

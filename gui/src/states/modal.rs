@@ -8,12 +8,12 @@ use iced::{
 
 use crate::{
     Context, Message, State, StateCommand, cmd,
-    states::modal::{confirm::ConfirmDialog, edit::EditorModal, error::ErrorDialog},
+    states::modal::{confirm::ConfirmDialog, edit::EditorModal, message::MessageDialog},
 };
 
 pub mod confirm;
 pub mod edit;
-pub mod error;
+pub mod message;
 
 pub trait Dialog: fmt::Debug {
     fn update(&mut self, event: Message, ctx: &mut Context) -> Result<DialogResult>;
@@ -32,9 +32,13 @@ pub struct Modal<D: Dialog> {
 }
 
 /// Constructs a Modal wrapping an ErrorDialog
-impl Modal<ErrorDialog> {
-    pub fn error(parent: Box<dyn State>, message: impl Into<String>) -> Self {
-        Self::new(parent, ErrorDialog::new(message.into()))
+impl Modal<MessageDialog> {
+    pub fn message(
+        parent: Box<dyn State>,
+        title: impl Into<String>,
+        message: impl AsRef<str>,
+    ) -> Self {
+        Self::new(parent, MessageDialog::new(title.into(), message.as_ref()))
     }
 }
 

@@ -7,7 +7,7 @@ use color_eyre::{
 use engine::game::{AdvanceResult, Image, StartResultOrData, TurnData, TurnInput, TurnOutput};
 use iced::{
     Background, Color, Element, Length, Task, Theme,
-    alignment::Horizontal,
+    alignment::{Horizontal, Vertical},
     padding,
     widget::{
         self, Button, Column, button, container,
@@ -288,6 +288,7 @@ impl State for Playing {
                     gm_instruction: self.gm_instruction_text_content.text(),
                 };
                 self.current_output.clear();
+                self.markdown.clear();
                 let AdvanceResult {
                     text_stream,
                     round_output,
@@ -457,12 +458,25 @@ impl State for Playing {
                 ctx.save.write_game_data(&ctx.game.data)?;
                 cmd::none()
             }
+            Message::ShowImageDescription => {
+                let img_info = match &self.sub_state {
+                    SubState::InThePast { data, .. } => &data.output.image_description,
+                    SubState::Complete(output) => &output.image_description,
+                    other => bail!("Invalid substate when seeing UpdateHiddenInfo: {other:#?}",),
+                };
+                cmd::transition(Modal::message(
+                    State::clone(self),
+                    "Image Description",
+                    img_info,
+                ))
+            }
 
             other @ (Message::ErrorConfirmed
             | Message::ConfirmDialogYes
             | Message::ConfirmDialogNo
             | Message::SaveEditModal
             | Message::UpdateEditModal(_)
+            | Message::MessageModalEditAction(_)
             | Message::CancelEditModal) => {
                 bail!("unexpected message: {other:?}")
             }
@@ -477,7 +491,13 @@ impl State for Playing {
                     .height(Length::Fill)
                     .max_width(832)
                     .into(),
-                widget::text(caption).into(),
+                row![
+                    widget::text(caption),
+                    widget::button("👁").on_press(Message::ShowImageDescription)
+                ]
+                .align_y(Vertical::Center)
+                .spacing(10)
+                .into(),
             ]);
             // .width(Length::Shrink);
         };
@@ -507,7 +527,7 @@ impl State for Playing {
                 ]);
                 main_col = main_col.push(mk_view_hidden_info_button()).push(
                     widget::column(elems)
-                        .max_width(400)
+                        .max_width(500)
                         .spacing(15)
                         .align_x(Horizontal::Center),
                 );
@@ -528,7 +548,7 @@ impl State for Playing {
                 ];
                 main_col = main_col.push(mk_view_hidden_info_button()).push(
                     widget::column(elems)
-                        .max_width(400)
+                        .max_width(500)
                         .spacing(15)
                         .align_x(Horizontal::Center),
                 );
@@ -543,11 +563,7 @@ impl State for Playing {
             ))
             .width(700)
             .padding(10)
-            .style(
-                |_theme| container::background(Background::Color(Color::from_rgb(
-                    0.95, 0.95, 0.95
-                )))
-            ),
+            .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95))),
             sidebar.align_x(Horizontal::Center).height(Length::Fill)
         ]
         .spacing(20);
