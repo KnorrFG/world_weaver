@@ -122,6 +122,12 @@ pub enum Message {
     ConfirmDialogNo,
     LoadGameFromCurrentPastButtonPressed,
     ConfirmLoadGameFromCurrentPast,
+    ShowHiddenText,
+    UpdateHiddenInfo(String),
+
+    SaveEditModal,
+    CancelEditModal,
+    UpdateEditModal(text_editor::Action),
 }
 
 #[derive(Debug, Default)]

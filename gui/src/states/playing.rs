@@ -1,4 +1,4 @@
-use std::mem;
+use std::{iter, mem};
 
 use color_eyre::{
     Result,
@@ -419,9 +419,51 @@ impl State for Playing {
                 self.reset_action_editors();
                 cmd::none()
             }
+            Message::ShowHiddenText => {
+                let hidden_info = match &self.sub_state {
+                    SubState::InThePast { data, .. } => &data.output.secret_info,
+                    SubState::Complete(output) => &output.secret_info,
+                    other => bail!("Invalid substate when seeing ShowHiddenText: {other:#?}",),
+                };
+                cmd::transition(Modal::edit(
+                    State::clone(self),
+                    "Hidden Information",
+                    hidden_info,
+                    |msg| Task::done(Message::UpdateHiddenInfo(msg)),
+                ))
+            }
+            Message::UpdateHiddenInfo(val) => {
+                match &mut self.sub_state {
+                    SubState::InThePast {
+                        data,
+                        completed_turn,
+                    } => {
+                        data.output.secret_info = val.clone();
+                        ctx.game.data.turn_data[*completed_turn].output.secret_info = val;
+                    }
+                    SubState::Complete(output) => {
+                        output.secret_info = val.clone();
+                        ctx.game
+                            .data
+                            .turn_data
+                            .last_mut()
+                            .unwrap()
+                            .output
+                            .secret_info = val;
+                    }
+                    other => bail!("Invalid substate when seeing UpdateHiddenInfo: {other:#?}",),
+                }
+
+                ctx.save.write_game_data(&ctx.game.data)?;
+                cmd::none()
+            }
+
             other @ (Message::ErrorConfirmed
             | Message::ConfirmDialogYes
-            | Message::ConfirmDialogNo) => {
+            | Message::ConfirmDialogNo
+            | Message::SaveEditModal
+            | Message::UpdateEditModal(_)
+            | Message::CancelEditModal) => {
                 bail!("unexpected message: {other:?}")
             }
         }
@@ -445,25 +487,37 @@ impl State for Playing {
         ];
 
         let button_w = 500;
-        let elems: Vec<_> = match &self.sub_state {
-            SubState::Complete(output) => mk_input_ui_portion(
-                output,
-                button_w,
-                &self.action_text_content,
-                &self.gm_instruction_text_content,
-            )
-            .into_iter()
-            .chain([
-                widget::rule::horizontal(1).into(),
-                mk_turn_selection_buttons(ctx, ctx.game.current_turn(), &self.goto_turn_string())
+        match &self.sub_state {
+            SubState::Complete(output) => {
+                let elems = mk_input_ui_portion(
+                    output,
+                    button_w,
+                    &self.action_text_content,
+                    &self.gm_instruction_text_content,
+                )
+                .into_iter()
+                .chain([
+                    widget::rule::horizontal(1).into(),
+                    mk_turn_selection_buttons(
+                        ctx,
+                        ctx.game.current_turn(),
+                        &self.goto_turn_string(),
+                    )
                     .into(),
-            ])
-            .collect(),
+                ]);
+                main_col = main_col.push(mk_view_hidden_info_button()).push(
+                    widget::column(elems)
+                        .max_width(400)
+                        .spacing(15)
+                        .align_x(Horizontal::Center),
+                );
+            }
             SubState::InThePast {
                 completed_turn: turn,
                 data: _data,
             } => {
-                vec![
+                let elems = vec![
+                    widget::Space::new().height(20).into(),
                     mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()).into(),
                     button("Goto current turn")
                         .on_press(Message::GoToCurrentTurn)
@@ -471,19 +525,16 @@ impl State for Playing {
                     button("Load game from here")
                         .on_press(Message::LoadGameFromCurrentPastButtonPressed)
                         .into(),
-                ]
+                ];
+                main_col = main_col.push(mk_view_hidden_info_button()).push(
+                    widget::column(elems)
+                        .max_width(400)
+                        .spacing(15)
+                        .align_x(Horizontal::Center),
+                );
             }
-            _ => vec![],
-        };
-
-        main_col = main_col
-            .push(
-                widget::column(elems)
-                    .max_width(500)
-                    .spacing(15)
-                    .align_x(Horizontal::Center),
-            )
-            .spacing(10);
+            _ => {}
+        }
 
         let text_row = row![
             container(scrollable(
@@ -584,4 +635,10 @@ fn mk_input_ui_portion<'a>(
             .width(button_w),
         row![space::horizontal(), button("Go").on_press(Message::Submit)],
     ]
+}
+
+fn mk_view_hidden_info_button() -> Column<'static, Message> {
+    widget::column![button("👁").on_press(Message::ShowHiddenText)]
+        .width(Length::Fill)
+        .align_x(Horizontal::Right)
 }

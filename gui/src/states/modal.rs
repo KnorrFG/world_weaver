@@ -6,9 +6,13 @@ use iced::{
     widget::{container, space, stack},
 };
 
-use crate::{Context, Message, State, StateCommand, cmd};
+use crate::{
+    Context, Message, State, StateCommand, cmd,
+    states::modal::{confirm::ConfirmDialog, edit::EditorModal, error::ErrorDialog},
+};
 
 pub mod confirm;
+pub mod edit;
 pub mod error;
 
 pub trait Dialog: fmt::Debug {
@@ -25,6 +29,40 @@ pub enum DialogResult {
 pub struct Modal<D: Dialog> {
     parent: Box<dyn State>,
     dialog: D,
+}
+
+/// Constructs a Modal wrapping an ErrorDialog
+impl Modal<ErrorDialog> {
+    pub fn error(parent: Box<dyn State>, message: impl Into<String>) -> Self {
+        Self::new(parent, ErrorDialog::new(message.into()))
+    }
+}
+
+/// Constructs a Modal wrapping a ConfirmDialog
+impl Modal<ConfirmDialog> {
+    pub fn confirm(
+        parent: Box<dyn State>,
+        message: impl Into<String>,
+        yes_msg: Option<Message>,
+        no_msg: Option<Message>,
+    ) -> Self {
+        Self::new(parent, ConfirmDialog::new(message, yes_msg, no_msg))
+    }
+}
+
+/// Constructs a Modal wrapping an EditorModal
+impl<F> Modal<EditorModal<F>>
+where
+    F: Fn(String) -> Task<Message> + Clone + Send + Sync + 'static,
+{
+    pub fn edit(
+        parent: Box<dyn State>,
+        title: impl Into<String>,
+        initial_content: impl Into<String>,
+        on_save: F,
+    ) -> Self {
+        Self::new(parent, EditorModal::new(title, initial_content, on_save))
+    }
 }
 
 impl<D: Dialog> Modal<D> {
