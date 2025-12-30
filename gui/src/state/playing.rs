@@ -561,23 +561,19 @@ impl State for Playing {
                 completed_turn: turn,
                 data: _data,
             } => {
-                let elems = vec![
-                    widget::Space::new().height(20).into(),
+                let elems = elem_list![
+                    widget::Space::new().height(20),
                     mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()).into(),
-                    button("Goto current turn")
-                        .on_press(MyMessage::GoToCurrentTurn.into())
-                        .into(),
+                    button("Goto current turn").on_press(MyMessage::GoToCurrentTurn.into()),
                     button("Load game from here")
                         .on_press(MyMessage::LoadGameFromCurrentPastButtonPressed.into())
-                        .into(),
                 ];
-                main_col.extend([
-                    mk_view_hidden_info_button().into(),
+                main_col.extend(elem_list![
+                    mk_view_hidden_info_button(),
                     widget::column(elems)
                         .max_width(500)
                         .spacing(15)
                         .align_x(Horizontal::Center)
-                        .into(),
                 ]);
             }
             _ => {}
@@ -609,11 +605,10 @@ impl State for Playing {
         .max_width(1500)
         .spacing(10);
 
-        Element::from(
-            container(main_col)
-                .center_x(Length::Fill)
-                .padding(padding::top(20)),
-        )
+        container(main_col)
+            .center_x(Length::Fill)
+            .padding(padding::top(20))
+            .into_elem()
         // .explain(iced::Color::from_rgb(1., 0., 0.))
     }
 
@@ -631,23 +626,32 @@ fn mk_turn_selection_buttons<'a>(
     current_turn: usize,
     goto_turn_input: &str,
 ) -> impl Into<Element<'a, Message>> {
-    let mut row = widget::Row::new();
+    let mut row = vec![];
     if current_turn > 0 {
-        row = row.push(widget::button("←").on_press(MyMessage::PrevTurnButtonPressed.into()));
+        row.push(
+            widget::button("←")
+                .on_press(MyMessage::PrevTurnButtonPressed.into())
+                .into_elem(),
+        );
     }
-    row = row.push(widget::space::horizontal());
-    row = row.push(
+
+    row.extend(elem_list![
+        widget::space::horizontal(),
         text_input("turn", goto_turn_input)
             .on_input(|t| MyMessage::UpdateTurnInput(t).into())
             .on_submit(MyMessage::GotoTurnPressed.into()),
-    );
-    row = row.push(widget::button("Goto Turn").on_press(MyMessage::GotoTurnPressed.into()));
-    row = row.push(widget::space::horizontal());
+        widget::button("Goto Turn").on_press(MyMessage::GotoTurnPressed.into()),
+        widget::space::horizontal()
+    ]);
     if current_turn < ctx.game.current_turn() - 1 {
-        row = row.push(widget::button("→").on_press(MyMessage::NextTurnButtonPressed.into()));
+        row.push(
+            widget::button("→")
+                .on_press(MyMessage::NextTurnButtonPressed.into())
+                .into(),
+        );
     }
 
-    row
+    widget::column(row)
 }
 
 fn mk_input_ui_portion<'a>(
