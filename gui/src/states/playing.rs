@@ -20,7 +20,7 @@ use iced::{
 use nonempty::nonempty;
 
 use crate::{
-    Context, Message, State, StateCommand, StringError, cmd, elem_list,
+    Context, ElemHelper, Message, State, StateCommand, StringError, cmd, elem_list, italic_text,
     states::{Modal, modal::confirm::ConfirmDialog},
 };
 
@@ -88,7 +88,7 @@ impl Playing {
             summary,
         )?;
         ctx.save.write_game_data(&ctx.game.data)?;
-        self.sub_state = SubState::Complete(output);
+        self.sub_state = SubState::Complete(ctx.game.data.turn_data.last().unwrap().clone());
         self.reset_action_editors();
         Ok(())
     }
@@ -131,7 +131,7 @@ impl Playing {
         // this looks wrong but is right. If we load the completed turn 0, the displayed output
         // is the ouput of turn 0, but that means we're actually in turn 1
         if target_turn + 1 == ctx.game.current_turn() {
-            self.sub_state = SubState::Complete(turn_data.output.clone());
+            self.sub_state = SubState::Complete(turn_data.clone());
         } else {
             self.sub_state = SubState::InThePast {
                 completed_turn: target_turn,
@@ -168,7 +168,7 @@ impl Playing {
 enum SubState {
     #[default]
     Uninit,
-    Complete(TurnOutput),
+    Complete(TurnData),
     WaitingForOutput {
         input: TurnInput,
         output: Option<TurnOutput>,
@@ -192,6 +192,14 @@ impl SubState {
 
     fn take(&mut self) -> Self {
         mem::take(self)
+    }
+
+    fn turn_data(&self) -> Result<&TurnData> {
+        match self {
+            Self::Complete(td) => Ok(td),
+            Self::InThePast { data, .. } => Ok(data),
+            _ => Err(eyre!("Trying to get turn-data while being: {self:?}")),
+        }
     }
 }
 
@@ -258,7 +266,7 @@ impl State for Playing {
                 }
                 StartResultOrData::Data(turn_data) => {
                     self.current_output = turn_data.output.text.clone();
-                    self.sub_state = SubState::Complete(turn_data.output);
+                    self.sub_state = SubState::Complete(turn_data.clone());
                     self.image_data = Some((
                         Handle::from_bytes(ctx.save.read_image(*turn_data.image_ids.first())?),
                         turn_data.image_captions.first().clone(),
@@ -416,14 +424,14 @@ impl State for Playing {
                 };
                 ctx.save.clip_after_turn(completed_turn)?;
                 ctx.game.data = ctx.save.read_game_data()?;
-                self.sub_state = SubState::Complete(data.output);
+                self.sub_state = SubState::Complete(data);
                 self.reset_action_editors();
                 cmd::none()
             }
             Message::ShowHiddenText => {
                 let hidden_info = match &self.sub_state {
                     SubState::InThePast { data, .. } => &data.output.secret_info,
-                    SubState::Complete(output) => &output.secret_info,
+                    SubState::Complete(turn_data) => &turn_data.output.secret_info,
                     other => bail!("Invalid substate when seeing ShowHiddenText: {other:#?}",),
                 };
                 cmd::transition(Modal::edit(
@@ -442,8 +450,8 @@ impl State for Playing {
                         data.output.secret_info = val.clone();
                         ctx.game.data.turn_data[*completed_turn].output.secret_info = val;
                     }
-                    SubState::Complete(output) => {
-                        output.secret_info = val.clone();
+                    SubState::Complete(turn_data) => {
+                        turn_data.output.secret_info = val.clone();
                         ctx.game
                             .data
                             .turn_data
@@ -461,7 +469,7 @@ impl State for Playing {
             Message::ShowImageDescription => {
                 let img_info = match &self.sub_state {
                     SubState::InThePast { data, .. } => &data.output.image_description,
-                    SubState::Complete(output) => &output.image_description,
+                    SubState::Complete(turn_data) => &turn_data.output.image_description,
                     other => bail!("Invalid substate when seeing UpdateHiddenInfo: {other:#?}",),
                 };
                 cmd::transition(Modal::message(
@@ -469,6 +477,10 @@ impl State for Playing {
                     "Image Description",
                     img_info,
                 ))
+            }
+            Message::CopyInputToClipboard => {
+                let td = self.sub_state.turn_data()?;
+                cmd::task(iced::clipboard::write(td.input.player_action.clone()))
             }
 
             other @ (Message::ErrorConfirmed
@@ -487,30 +499,51 @@ impl State for Playing {
         let mut sidebar = Column::new();
         if let Some((handle, caption)) = &self.image_data {
             sidebar = sidebar.extend([
-                container(widget::image(handle))
-                    .height(Length::Fill)
+                container(widget::image(handle).height(Length::Fill).expand(true))
                     .max_width(832)
                     .into(),
-                row![
-                    widget::text(caption),
-                    widget::button("👁").on_press(Message::ShowImageDescription)
-                ]
-                .align_y(Vertical::Center)
-                .spacing(10)
-                .into(),
+                if self.sub_state.turn_data().is_ok() {
+                    row![
+                        widget::text(caption),
+                        widget::button("👁").on_press(Message::ShowImageDescription)
+                    ]
+                    .align_y(Vertical::Center)
+                    .spacing(10)
+                    .into_elem()
+                } else {
+                    widget::text(caption).into_elem()
+                },
             ]);
             // .width(Length::Shrink);
         };
 
-        let mut main_col = widget::column![
-            markdown::view(&self.markdown, Theme::TokyoNight).map(|_| unreachable!())
-        ];
+        let mut main_col: Vec<Element<Message>> = vec![];
+        let mut text_col: Vec<Element<Message>> = vec![];
+        if let Ok(td) = self.sub_state.turn_data() {
+            text_col.push(italic_text(&td.input.player_action).into());
+            text_col.push(
+                widget::row![
+                    space::horizontal(),
+                    widget::button("📋").on_press(Message::CopyInputToClipboard)
+                ]
+                .into(),
+            );
+            text_col.push(widget::rule::horizontal(2).into());
+        }
+
+        text_col.push(
+            markdown::view(&self.markdown, Theme::TokyoNight)
+                .map(|_| unreachable!())
+                .into(),
+        );
+
+        main_col.push(widget::column(text_col).spacing(20).into());
 
         let button_w = 500;
         match &self.sub_state {
-            SubState::Complete(output) => {
+            SubState::Complete(turn_data) => {
                 let elems = mk_input_ui_portion(
-                    output,
+                    &turn_data.output,
                     button_w,
                     &self.action_text_content,
                     &self.gm_instruction_text_content,
@@ -525,12 +558,14 @@ impl State for Playing {
                     )
                     .into(),
                 ]);
-                main_col = main_col.push(mk_view_hidden_info_button()).push(
+                main_col.extend([
+                    mk_view_hidden_info_button().into(),
                     widget::column(elems)
                         .max_width(500)
                         .spacing(15)
-                        .align_x(Horizontal::Center),
-                );
+                        .align_x(Horizontal::Center)
+                        .into(),
+                ]);
             }
             SubState::InThePast {
                 completed_turn: turn,
@@ -546,19 +581,21 @@ impl State for Playing {
                         .on_press(Message::LoadGameFromCurrentPastButtonPressed)
                         .into(),
                 ];
-                main_col = main_col.push(mk_view_hidden_info_button()).push(
+                main_col.extend([
+                    mk_view_hidden_info_button().into(),
                     widget::column(elems)
                         .max_width(500)
                         .spacing(15)
-                        .align_x(Horizontal::Center),
-                );
+                        .align_x(Horizontal::Center)
+                        .into(),
+                ]);
             }
             _ => {}
         }
 
         let text_row = row![
             container(scrollable(
-                container(main_col.align_x(Horizontal::Center))
+                container(widget::column(main_col).align_x(Horizontal::Center))
                     .padding(padding::all(10.).right(20.))
             ))
             .width(700)

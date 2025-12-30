@@ -1,4 +1,4 @@
-use crate::{Context, Message};
+use crate::{Context, Message, bold_text};
 
 use color_eyre::{Result, owo_colors::OwoColorize};
 use iced::{
@@ -41,10 +41,7 @@ impl super::Dialog for MessageDialog {
     fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, Message> {
         container(
             column![
-                text(&self.title).size(20).font(Font {
-                    weight: Weight::Bold,
-                    ..Font::DEFAULT
-                }),
+                bold_text(&self.title).size(20),
                 container(
                     scrollable(
                         text_editor(&self.editor_content)
@@ -62,7 +59,7 @@ impl super::Dialog for MessageDialog {
         .padding(20)
         .max_width(700)
         .max_height(700)
-        .style(|_theme| container::background(Color::WHITE).border(Border::default().rounded(30)))
+        .style(|_theme| container::background(Color::WHITE).border(Border::default().rounded(10)))
         .into()
     }
 }

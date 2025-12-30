@@ -1,7 +1,8 @@
 use color_eyre::Result;
 use iced::{
-    Border, Element, Length, Task,
-    widget::{button, column, container, row, scrollable, text},
+    Border, Color, Element, Length, Task,
+    alignment::Horizontal,
+    widget::{button, column, container, row, scrollable, space, text},
 };
 
 use crate::{
@@ -49,16 +50,22 @@ impl Dialog for ConfirmDialog {
                 container(scrollable(text(&self.message)))
                     .padding(20)
                     .width(Length::Shrink),
-                row![
-                    button("No").on_press(Message::ConfirmDialogNo),
-                    button("Yes").on_press(Message::ConfirmDialogYes),
+                column![
+                    row![
+                        button("No").on_press(Message::ConfirmDialogNo),
+                        button("Yes").on_press(Message::ConfirmDialogYes),
+                    ]
+                    .spacing(10)
                 ]
+                .width(Length::Fill)
+                .align_x(Horizontal::Right)
                 .spacing(20),
             ]
+            .width(Length::Shrink)
             .spacing(20),
         )
         .padding(20)
-        .style(|theme| iced::widget::container::secondary(theme).border(Border::default()))
+        .style(container::bordered_box)
         .into()
     }
 }

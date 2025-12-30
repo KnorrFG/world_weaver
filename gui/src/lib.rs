@@ -11,7 +11,11 @@ use engine::{
     llm::OutputMessage,
     save_archive::SaveArchive,
 };
-use iced::{Element, Task, Theme, widget::text_editor};
+use iced::{
+    Element, Font, Task, Theme,
+    font::{self, Weight},
+    widget::text_editor,
+};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub mod cli;
@@ -134,6 +138,7 @@ pub enum Message {
     ShowHiddenText,
     UpdateHiddenInfo(String),
     ShowImageDescription,
+    CopyInputToClipboard,
 
     SaveEditModal,
     CancelEditModal,
@@ -232,4 +237,36 @@ macro_rules! elem_list {
 }
 pub(crate) use elem_list;
 
-use crate::states::{Modal, modal::message::MessageDialog};
+use crate::states::Modal;
+
+pub trait ElemHelper<'a, T> {
+    fn into_elem(self) -> Element<'a, T>;
+}
+
+impl<'a, ElemT, T: Into<Element<'a, ElemT>>> ElemHelper<'a, ElemT> for T {
+    fn into_elem(self) -> Element<'a, ElemT> {
+        self.into()
+    }
+}
+
+fn italic_text(t: &str) -> iced::widget::Text {
+    iced::widget::text(t).font(italic_default_font()).into()
+}
+
+fn italic_default_font() -> Font {
+    Font {
+        style: font::Style::Italic,
+        ..Font::DEFAULT
+    }
+}
+
+fn bold_text(t: &str) -> iced::widget::Text {
+    iced::widget::text(t).font(bold_default_font())
+}
+
+fn bold_default_font() -> Font {
+    Font {
+        weight: font::Weight::Bold,
+        ..Font::DEFAULT
+    }
+}
