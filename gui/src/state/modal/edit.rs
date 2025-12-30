@@ -1,7 +1,7 @@
 use crate::{
     Context,
     message::{Message, state_messages::EditDialog as MyMessage},
-    states::{Dialog, modal::DialogResult},
+    state::{Dialog, modal::DialogResult},
 };
 use color_eyre::Result;
 use iced::{

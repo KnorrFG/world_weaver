@@ -7,9 +7,12 @@ use iced::{
 };
 
 use crate::{
-    Context, State, StateCommand, cmd,
+    Context, State,
     message::Message,
-    states::modal::{confirm::ConfirmDialog, edit::EditorModal, message::MessageDialog},
+    state::{
+        StateCommand, cmd,
+        modal::{confirm::ConfirmDialog, edit::EditorModal, message::MessageDialog},
+    },
 };
 
 pub mod confirm;

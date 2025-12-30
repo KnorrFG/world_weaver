@@ -8,7 +8,7 @@ use iced::{
 use crate::{
     Context,
     message::{Message, state_messages::ConfirmDialog as MyMessage},
-    states::modal::{Dialog, DialogResult},
+    state::modal::{Dialog, DialogResult},
 };
 
 #[derive(Debug, Clone)]

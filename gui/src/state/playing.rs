@@ -20,9 +20,9 @@ use iced::{
 use nonempty::nonempty;
 
 use crate::{
-    Context, ElemHelper, State, StateCommand, StringError, cmd, elem_list, italic_text,
+    Context, ElemHelper, State, StringError, elem_list, italic_text,
     message::{Message, state_messages::Playing as MyMessage},
-    states::{Modal, modal::confirm::ConfirmDialog},
+    state::{Modal, StateCommand, cmd, modal::confirm::ConfirmDialog},
 };
 
 #[derive(Debug, Clone)]
@@ -209,7 +209,7 @@ impl State for Playing {
         &mut self,
         message: Message,
         ctx: &mut crate::Context,
-    ) -> color_eyre::eyre::Result<crate::StateCommand> {
+    ) -> color_eyre::eyre::Result<StateCommand> {
         use MyMessage::*;
         match message.try_into()? {
             OutputComplete(turn_output) => {
