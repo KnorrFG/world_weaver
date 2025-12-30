@@ -3,9 +3,9 @@ use std::time::Duration;
 use async_stream::try_stream;
 use color_eyre::{
     Result,
-    eyre::{bail, eyre},
+    eyre::eyre,
 };
-use log::{debug, info};
+use log::info;
 use reqwest::header::{self, HeaderValue};
 use serde::{Deserialize, Serialize};
 use tokio_stream::Stream;

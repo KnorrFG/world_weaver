@@ -1,9 +1,6 @@
 use clap::Parser;
-use color_eyre::{Result, eyre::eyre};
-use engine::image_model::{
-    Model,
-    flux2::flux2_api::{poll_and_fetch, query},
-};
+use color_eyre::Result;
+use engine::image_model::Model;
 
 #[derive(clap::Parser)]
 struct Arg {

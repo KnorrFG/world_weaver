@@ -1,10 +1,11 @@
 use crate::{
-    Context, Message,
+    Context,
+    message::{Message, state_messages::EditDialog as MyMessage},
     states::{Dialog, modal::DialogResult},
 };
 use color_eyre::Result;
 use iced::{
-    Element, Length, Task, Theme,
+    Element, Length, Task,
     widget::{button, column, container, row, scrollable, space, text, text_editor},
 };
 
@@ -44,30 +45,30 @@ where
     F: Fn(String) -> Task<Message> + Clone + Send + Sync + 'static,
 {
     fn update(&mut self, event: Message, _ctx: &mut Context) -> Result<DialogResult> {
-        match event {
-            Message::UpdateEditModal(action) => {
+        use MyMessage::*;
+        match event.try_into()? {
+            Update(action) => {
                 self.editor_content.perform(action);
                 Ok(DialogResult::Stay)
             }
-            Message::SaveEditModal => {
+            Save => {
                 let task = (self.on_save)(self.editor_content.text());
                 Ok(DialogResult::Close(task))
             }
-            Message::CancelEditModal => Ok(DialogResult::Close(Task::none())),
-            _ => Ok(DialogResult::Stay),
+            Cancel => Ok(DialogResult::Close(Task::none())),
         }
     }
 
     fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, Message> {
-        let editor = text_editor(&self.editor_content).on_action(Message::UpdateEditModal);
+        let editor = text_editor(&self.editor_content).on_action(|a| MyMessage::Update(a).into());
 
         let content = column![
             text(&self.title).size(20),
             scrollable(editor).height(Length::Fill),
             row![
                 space::horizontal(),
-                button("Cancel").on_press(Message::CancelEditModal),
-                button("Save").on_press(Message::SaveEditModal),
+                button("Cancel").on_press(MyMessage::Cancel.into()),
+                button("Save").on_press(MyMessage::Save.into()),
             ]
             .spacing(10)
         ]

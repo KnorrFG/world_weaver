@@ -1,4 +1,4 @@
-use std::{iter, mem};
+use std::mem;
 
 use color_eyre::{
     Result,
@@ -6,7 +6,7 @@ use color_eyre::{
 };
 use engine::game::{AdvanceResult, Image, StartResultOrData, TurnData, TurnInput, TurnOutput};
 use iced::{
-    Background, Color, Element, Length, Task, Theme,
+    Color, Element, Length, Task, Theme,
     alignment::{Horizontal, Vertical},
     padding,
     widget::{
@@ -20,7 +20,8 @@ use iced::{
 use nonempty::nonempty;
 
 use crate::{
-    Context, ElemHelper, Message, State, StateCommand, StringError, cmd, elem_list, italic_text,
+    Context, ElemHelper, State, StateCommand, StringError, cmd, elem_list, italic_text,
+    message::{Message, state_messages::Playing as MyMessage},
     states::{Modal, modal::confirm::ConfirmDialog},
 };
 
@@ -67,7 +68,7 @@ impl Playing {
         };
         let fut = ctx.game.mk_summary_if_neccessary();
         cmd::task(Task::perform(fut, |res| {
-            Message::SummaryFinished(res.map_err(StringError::from))
+            MyMessage::SummaryFinished(res.map_err(StringError::from)).into()
         }))
     }
 
@@ -104,7 +105,7 @@ impl Playing {
         editor: EditorId,
     ) -> Result<StateCommand, color_eyre::eyre::Error> {
         if let text_editor::Action::Edit(Edit::Enter) = action {
-            cmd::task(Task::done(Message::Submit))
+            cmd::task(Task::done(MyMessage::Submit.into()))
         } else {
             match editor {
                 EditorId::PlayerAction => self.action_text_content.perform(action),
@@ -209,8 +210,9 @@ impl State for Playing {
         message: Message,
         ctx: &mut crate::Context,
     ) -> color_eyre::eyre::Result<crate::StateCommand> {
-        match message {
-            Message::OutputComplete(turn_output) => {
+        use MyMessage::*;
+        match message.try_into()? {
+            OutputComplete(turn_output) => {
                 let output = turn_output?;
 
                 let SubState::WaitingForOutput {
@@ -233,12 +235,12 @@ impl State for Playing {
                     cmd::none()
                 }
             }
-            Message::NewTextFragment(t) => {
+            NewTextFragment(t) => {
                 self.current_output.push_str(&t?);
                 self.markdown = markdown::parse(&self.current_output).collect();
                 cmd::none()
             }
-            Message::Init => match ctx.game.start_or_get_last_output() {
+            Init => match ctx.game.start_or_get_last_output() {
                 StartResultOrData::StartResult(
                     AdvanceResult {
                         text_stream,
@@ -248,13 +250,13 @@ impl State for Playing {
                     input,
                 ) => {
                     let output_fut = Task::perform(round_output, |res| {
-                        Message::OutputComplete(res.map_err(StringError::from))
+                        OutputComplete(res.map_err(StringError::from)).into()
                     });
                     let image_fut = Task::perform(image, |res| {
-                        Message::ImageReady(res.map_err(StringError::from))
+                        ImageReady(res.map_err(StringError::from)).into()
                     });
                     let stream_task = Task::run(text_stream, |res| {
-                        Message::NewTextFragment(res.map_err(StringError::from))
+                        NewTextFragment(res.map_err(StringError::from)).into()
                     });
                     self.sub_state = SubState::WaitingForOutput {
                         input,
@@ -275,21 +277,19 @@ impl State for Playing {
                     cmd::none()
                 }
             },
-            Message::UpdateActionText(action) => {
-                self.update_editor_content(action, EditorId::PlayerAction)
-            }
-            Message::UpdateGMInstructionText(action) => {
+            UpdateActionText(action) => self.update_editor_content(action, EditorId::PlayerAction),
+            UpdateGMInstructionText(action) => {
                 self.update_editor_content(action, EditorId::GMInstruction)
             }
-            Message::ProposedActionButtonPressed(s) => {
+            ProposedActionButtonPressed(s) => {
                 if self.action_text_content.text() == s {
-                    cmd::task(Task::done(Message::Submit))
+                    cmd::task(Task::done(Submit.into()))
                 } else {
                     self.action_text_content = text_editor::Content::with_text(&s);
                     cmd::none()
                 }
             }
-            Message::Submit => {
+            Submit => {
                 // let input = TurnInput::player_action(self.action_text_content.text());
                 let input = TurnInput {
                     player_action: self.action_text_content.text(),
@@ -312,15 +312,15 @@ impl State for Playing {
                 };
                 cmd::task(Task::batch([
                     Task::perform(round_output, |x| {
-                        Message::OutputComplete(x.map_err(StringError::from))
+                        OutputComplete(x.map_err(StringError::from)).into()
                     }),
-                    Task::perform(image, |x| Message::ImageReady(x.map_err(StringError::from))),
+                    Task::perform(image, |x| ImageReady(x.map_err(StringError::from)).into()),
                     Task::run(text_stream, |x| {
-                        Message::NewTextFragment(x.map_err(StringError::from))
+                        NewTextFragment(x.map_err(StringError::from)).into()
                     }),
                 ]))
             }
-            Message::ImageReady(image) => {
+            ImageReady(image) => {
                 let img = image?;
                 self.image_data = Some((
                     Handle::from_bytes(img.jpeg_bytes.clone()),
@@ -347,7 +347,7 @@ impl State for Playing {
                     cmd::none()
                 }
             }
-            Message::SummaryFinished(output_message) => {
+            SummaryFinished(output_message) => {
                 let SubState::WaitingForSummary {
                     input,
                     output,
@@ -359,7 +359,7 @@ impl State for Playing {
                 self.complete_turn(ctx, input, output, image, output_message?.map(|m| m.text))?;
                 cmd::none()
             }
-            Message::PrevTurnButtonPressed => {
+            PrevTurnButtonPressed => {
                 let target_turn = match &self.sub_state {
                     SubState::Complete(_) => ctx.game.current_turn() - 2,
                     SubState::InThePast {
@@ -374,7 +374,7 @@ impl State for Playing {
                 self.load_completed_turn(ctx, target_turn)?;
                 cmd::none()
             }
-            Message::NextTurnButtonPressed => {
+            NextTurnButtonPressed => {
                 let target_turn = match &self.sub_state {
                     SubState::InThePast {
                         completed_turn: turn,
@@ -388,11 +388,11 @@ impl State for Playing {
                 self.load_completed_turn(ctx, target_turn)?;
                 cmd::none()
             }
-            Message::UpdateTurnInput(inp) => {
+            UpdateTurnInput(inp) => {
                 self.goto_turn_input = inp.parse().ok();
                 cmd::none()
             }
-            Message::GotoTurnPressed => {
+            GotoTurnPressed => {
                 if let Some(target) = self.goto_turn_input {
                     ensure!(
                         (1..=ctx.game.current_turn()).contains(&target),
@@ -402,19 +402,19 @@ impl State for Playing {
                 }
                 cmd::none()
             }
-            Message::GoToCurrentTurn => {
+            GoToCurrentTurn => {
                 self.load_completed_turn(ctx, ctx.game.current_turn() - 1)?;
                 cmd::none()
             }
-            Message::LoadGameFromCurrentPastButtonPressed => cmd::transition(Modal::new(
+            LoadGameFromCurrentPastButtonPressed => cmd::transition(Modal::new(
                 State::clone(self),
                 ConfirmDialog::new(
                     "Do you really want to load the Game from here?\nThis will delete all unsafed progress.",
-                    Some(Message::ConfirmLoadGameFromCurrentPast),
+                    Some(ConfirmLoadGameFromCurrentPast.into()),
                     None,
                 ),
             )),
-            Message::ConfirmLoadGameFromCurrentPast => {
+            ConfirmLoadGameFromCurrentPast => {
                 let SubState::InThePast {
                     completed_turn,
                     data,
@@ -428,7 +428,7 @@ impl State for Playing {
                 self.reset_action_editors();
                 cmd::none()
             }
-            Message::ShowHiddenText => {
+            ShowHiddenText => {
                 let hidden_info = match &self.sub_state {
                     SubState::InThePast { data, .. } => &data.output.secret_info,
                     SubState::Complete(turn_data) => &turn_data.output.secret_info,
@@ -438,10 +438,10 @@ impl State for Playing {
                     State::clone(self),
                     "Hidden Information",
                     hidden_info,
-                    |msg| Task::done(Message::UpdateHiddenInfo(msg)),
+                    |msg| Task::done(UpdateHiddenInfo(msg).into()),
                 ))
             }
-            Message::UpdateHiddenInfo(val) => {
+            UpdateHiddenInfo(val) => {
                 match &mut self.sub_state {
                     SubState::InThePast {
                         data,
@@ -466,7 +466,7 @@ impl State for Playing {
                 ctx.save.write_game_data(&ctx.game.data)?;
                 cmd::none()
             }
-            Message::ShowImageDescription => {
+            ShowImageDescription => {
                 let img_info = match &self.sub_state {
                     SubState::InThePast { data, .. } => &data.output.image_description,
                     SubState::Complete(turn_data) => &turn_data.output.image_description,
@@ -478,19 +478,9 @@ impl State for Playing {
                     img_info,
                 ))
             }
-            Message::CopyInputToClipboard => {
+            CopyInputToClipboard => {
                 let td = self.sub_state.turn_data()?;
                 cmd::task(iced::clipboard::write(td.input.player_action.clone()))
-            }
-
-            other @ (Message::ErrorConfirmed
-            | Message::ConfirmDialogYes
-            | Message::ConfirmDialogNo
-            | Message::SaveEditModal
-            | Message::UpdateEditModal(_)
-            | Message::MessageModalEditAction(_)
-            | Message::CancelEditModal) => {
-                bail!("unexpected message: {other:?}")
             }
         }
     }
@@ -505,7 +495,7 @@ impl State for Playing {
                 if self.sub_state.turn_data().is_ok() {
                     row![
                         widget::text(caption),
-                        widget::button("👁").on_press(Message::ShowImageDescription)
+                        widget::button("👁").on_press(MyMessage::ShowImageDescription.into())
                     ]
                     .align_y(Vertical::Center)
                     .spacing(10)
@@ -524,7 +514,7 @@ impl State for Playing {
             text_col.push(
                 widget::row![
                     space::horizontal(),
-                    widget::button("📋").on_press(Message::CopyInputToClipboard)
+                    widget::button("📋").on_press(MyMessage::CopyInputToClipboard.into())
                 ]
                 .into(),
             );
@@ -575,10 +565,10 @@ impl State for Playing {
                     widget::Space::new().height(20).into(),
                     mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()).into(),
                     button("Goto current turn")
-                        .on_press(Message::GoToCurrentTurn)
+                        .on_press(MyMessage::GoToCurrentTurn.into())
                         .into(),
                     button("Load game from here")
-                        .on_press(Message::LoadGameFromCurrentPastButtonPressed)
+                        .on_press(MyMessage::LoadGameFromCurrentPastButtonPressed.into())
                         .into(),
                 ];
                 main_col.extend([
@@ -633,7 +623,7 @@ impl State for Playing {
 }
 
 fn proposed_action_button<'a>(text: &'a str) -> Button<'a, Message> {
-    button(text).on_press(Message::ProposedActionButtonPressed(text.into()))
+    button(text).on_press(MyMessage::ProposedActionButtonPressed(text.into()).into())
 }
 
 fn mk_turn_selection_buttons<'a>(
@@ -643,18 +633,18 @@ fn mk_turn_selection_buttons<'a>(
 ) -> impl Into<Element<'a, Message>> {
     let mut row = widget::Row::new();
     if current_turn > 0 {
-        row = row.push(widget::button("←").on_press(Message::PrevTurnButtonPressed));
+        row = row.push(widget::button("←").on_press(MyMessage::PrevTurnButtonPressed.into()));
     }
     row = row.push(widget::space::horizontal());
     row = row.push(
         text_input("turn", goto_turn_input)
-            .on_input(Message::UpdateTurnInput)
-            .on_submit(Message::GotoTurnPressed),
+            .on_input(|t| MyMessage::UpdateTurnInput(t).into())
+            .on_submit(MyMessage::GotoTurnPressed.into()),
     );
-    row = row.push(widget::button("Goto Turn").on_press(Message::GotoTurnPressed));
+    row = row.push(widget::button("Goto Turn").on_press(MyMessage::GotoTurnPressed.into()));
     row = row.push(widget::space::horizontal());
     if current_turn < ctx.game.current_turn() - 1 {
-        row = row.push(widget::button("→").on_press(Message::NextTurnButtonPressed));
+        row = row.push(widget::button("→").on_press(MyMessage::NextTurnButtonPressed.into()));
     }
 
     row
@@ -675,7 +665,7 @@ fn mk_input_ui_portion<'a>(
         row![widget::text("What to do next:"), space::horizontal()],
         widget::text_editor(action_text_content)
             .placeholder("Type an action")
-            .on_action(Message::UpdateActionText)
+            .on_action(|a| MyMessage::UpdateActionText(a).into())
             .width(button_w),
         widget::Space::new().height(10),
         row![
@@ -684,14 +674,17 @@ fn mk_input_ui_portion<'a>(
         ],
         widget::text_editor(gm_instruction_text_content)
             .placeholder("Type an action")
-            .on_action(Message::UpdateGMInstructionText)
+            .on_action(|a| MyMessage::UpdateGMInstructionText(a).into())
             .width(button_w),
-        row![space::horizontal(), button("Go").on_press(Message::Submit)],
+        row![
+            space::horizontal(),
+            button("Go").on_press(MyMessage::Submit.into())
+        ],
     ]
 }
 
 fn mk_view_hidden_info_button() -> Column<'static, Message> {
-    widget::column![button("👁").on_press(Message::ShowHiddenText)]
+    widget::column![button("👁").on_press(MyMessage::ShowHiddenText.into())]
         .width(Length::Fill)
         .align_x(Horizontal::Right)
 }

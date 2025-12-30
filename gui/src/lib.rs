@@ -5,16 +5,10 @@ use std::{
 };
 
 use color_eyre::{Result, eyre::eyre};
-use engine::{
-    game::{Game, Image, TurnOutput},
-    image_model,
-    llm::OutputMessage,
-    save_archive::SaveArchive,
-};
+use engine::{game::Game, image_model, save_archive::SaveArchive};
 use iced::{
     Element, Font, Task, Theme,
-    font::{self, Weight},
-    widget::text_editor,
+    font::{self},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -24,8 +18,8 @@ pub mod states;
 const APP_NAME: &str = "World Weaver";
 
 pub trait State: fmt::Debug {
-    fn update(&mut self, event: Message, ctx: &mut Context) -> Result<StateCommand>;
-    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, Message>;
+    fn update(&mut self, event: message::Message, ctx: &mut Context) -> Result<StateCommand>;
+    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, message::Message>;
     fn clone(&self) -> Box<dyn State>;
 }
 
@@ -38,11 +32,11 @@ pub trait StateExt: State + Sized + 'static {
 impl<T: State + Sized + 'static> StateExt for T {}
 
 impl<T: std::ops::DerefMut<Target = dyn State> + fmt::Debug> State for T {
-    fn update(&mut self, event: Message, ctx: &mut Context) -> Result<StateCommand> {
+    fn update(&mut self, event: message::Message, ctx: &mut Context) -> Result<StateCommand> {
         self.deref_mut().update(event, ctx)
     }
 
-    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, Message> {
+    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, message::Message> {
         self.deref().view(ctx)
     }
 
@@ -64,7 +58,7 @@ impl Gui {
         }
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: message::Message) -> Task<message::Message> {
         let cmd = self.state.update(message, &mut self.ctx);
 
         match cmd {
@@ -81,7 +75,7 @@ impl Gui {
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, message::Message> {
         self.state.view(&self.ctx)
     }
 
@@ -112,44 +106,74 @@ impl From<color_eyre::Report> for StringError {
 
 impl std::error::Error for StringError {}
 
-#[derive(Debug, Clone)]
-pub enum Message {
-    OutputComplete(Result<TurnOutput, StringError>),
-    NewTextFragment(Result<String, StringError>),
-    ImageReady(Result<Image, StringError>),
-    Init,
-    UpdateActionText(text_editor::Action),
-    UpdateGMInstructionText(text_editor::Action),
+pub mod message {
+    use derive_more::{From, TryInto};
 
-    ProposedActionButtonPressed(String),
-    Submit,
-    SummaryFinished(Result<Option<OutputMessage>, StringError>),
+    #[derive(Debug, Clone, From, TryInto)]
+    pub enum Message {
+        Playing(state_messages::Playing),
+        MessageDialog(state_messages::MessageDialog),
+        ConfirmDialog(state_messages::ConfirmDialog),
+        EditDialog(state_messages::EditDialog),
+    }
 
-    PrevTurnButtonPressed,
-    NextTurnButtonPressed,
-    UpdateTurnInput(String),
-    GotoTurnPressed,
-    GoToCurrentTurn,
-    ErrorConfirmed,
-    ConfirmDialogYes,
-    ConfirmDialogNo,
-    LoadGameFromCurrentPastButtonPressed,
-    ConfirmLoadGameFromCurrentPast,
-    ShowHiddenText,
-    UpdateHiddenInfo(String),
-    ShowImageDescription,
-    CopyInputToClipboard,
+    pub mod state_messages {
+        use engine::{
+            game::{self, TurnOutput},
+            llm,
+        };
+        use iced::widget::text_editor;
 
-    SaveEditModal,
-    CancelEditModal,
-    UpdateEditModal(text_editor::Action),
+        use crate::StringError;
 
-    MessageModalEditAction(text_editor::Action),
+        #[derive(Debug, Clone)]
+        pub enum Playing {
+            OutputComplete(Result<TurnOutput, StringError>),
+            NewTextFragment(Result<String, StringError>),
+            ImageReady(Result<game::Image, StringError>),
+            Init,
+            UpdateActionText(text_editor::Action),
+            UpdateGMInstructionText(text_editor::Action),
+            ProposedActionButtonPressed(String),
+            Submit,
+            SummaryFinished(Result<Option<llm::OutputMessage>, StringError>),
+            PrevTurnButtonPressed,
+            NextTurnButtonPressed,
+            UpdateTurnInput(String),
+            GotoTurnPressed,
+            GoToCurrentTurn,
+            LoadGameFromCurrentPastButtonPressed,
+            ConfirmLoadGameFromCurrentPast,
+            ShowHiddenText,
+            UpdateHiddenInfo(String),
+            ShowImageDescription,
+            CopyInputToClipboard,
+        }
+
+        #[derive(Debug, Clone)]
+        pub enum MessageDialog {
+            Confirm,
+            EditAction(text_editor::Action),
+        }
+
+        #[derive(Debug, Clone)]
+        pub enum ConfirmDialog {
+            Yes,
+            No,
+        }
+
+        #[derive(Debug, Clone)]
+        pub enum EditDialog {
+            Save,
+            Cancel,
+            Update(text_editor::Action),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct StateCommand {
-    pub task: Option<Task<Message>>,
+    pub task: Option<Task<message::Message>>,
     pub transition: Option<Box<dyn State>>,
 }
 
@@ -160,7 +184,7 @@ pub mod cmd {
         Ok(StateCommand::default())
     }
 
-    pub fn task(t: Task<Message>) -> Result<StateCommand> {
+    pub fn task(t: Task<message::Message>) -> Result<StateCommand> {
         Ok(StateCommand {
             task: Some(t),
             transition: None,
@@ -174,7 +198,10 @@ pub mod cmd {
         })
     }
 
-    pub fn transition_with_task(s: impl State + 'static, t: Task<Message>) -> Result<StateCommand> {
+    pub fn transition_with_task(
+        s: impl State + 'static,
+        t: Task<message::Message>,
+    ) -> Result<StateCommand> {
         Ok(StateCommand {
             task: Some(t),
             transition: Some(Box::new(s)),
@@ -249,7 +276,7 @@ impl<'a, ElemT, T: Into<Element<'a, ElemT>>> ElemHelper<'a, ElemT> for T {
     }
 }
 
-fn italic_text(t: &str) -> iced::widget::Text {
+fn italic_text(t: &str) -> iced::widget::Text<'_> {
     iced::widget::text(t).font(italic_default_font()).into()
 }
 
@@ -260,7 +287,7 @@ fn italic_default_font() -> Font {
     }
 }
 
-fn bold_text(t: &str) -> iced::widget::Text {
+fn bold_text(t: &str) -> iced::widget::Text<'_> {
     iced::widget::text(t).font(bold_default_font())
 }
 

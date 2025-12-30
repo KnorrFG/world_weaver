@@ -1,10 +1,12 @@
-use crate::{Context, Message, bold_text};
+use crate::{
+    Context, bold_text,
+    message::{Message, state_messages::MessageDialog as MyMessage},
+};
 
 use color_eyre::{Result, owo_colors::OwoColorize};
 use iced::{
-    Border, Color, Element, Font, Length, Task,
-    font::Weight,
-    widget::{button, column, container, scrollable, text, text_editor, text_editor::Action},
+    Border, Color, Element, Length, Task,
+    widget::{button, column, container, scrollable, text_editor, text_editor::Action},
 };
 
 use super::DialogResult;
@@ -26,15 +28,16 @@ impl MessageDialog {
 
 impl super::Dialog for MessageDialog {
     fn update(&mut self, event: Message, _ctx: &mut Context) -> Result<DialogResult> {
-        match event {
-            Message::ErrorConfirmed => Ok(DialogResult::Close(Task::none())),
-            Message::MessageModalEditAction(a) => {
+        use MyMessage::*;
+
+        match event.try_into()? {
+            Confirm => Ok(DialogResult::Close(Task::none())),
+            EditAction(a) => {
                 if !matches!(a, Action::Edit(_)) {
                     self.editor_content.perform(a);
                 }
                 Ok(DialogResult::Stay)
             }
-            _ => Ok(DialogResult::Stay),
         }
     }
 
@@ -45,13 +48,14 @@ impl super::Dialog for MessageDialog {
                 container(
                     scrollable(
                         text_editor(&self.editor_content)
-                            .on_action(Message::MessageModalEditAction)
+                            .on_action(|a| { MyMessage::EditAction(a).into() })
                     )
                     .height(Length::Fill)
                 )
                 .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95)))
                 .padding(20),
-                container(button("Ok").on_press(Message::ErrorConfirmed)).align_right(Length::Fill)
+                container(button("Ok").on_press(MyMessage::Confirm.into()))
+                    .align_right(Length::Fill)
             ]
             .spacing(10),
         )

@@ -1,12 +1,6 @@
 Todos:
 
-- integrate recraft.ai
-- access all information in the game, including hidden information, image descriptions, etc
-
 Critical missing features:
-
-- Summary
-- skip to turns and load from there
 
 other:
 	- game::send_to_llm is in urgent need of a refactor
@@ -21,7 +15,6 @@ Missing features:
 - starting a new game without cli
 - configure tokens without cli
 - display of costs
-- theming not working
 - regenerate turn
 
 Layout things to fix:

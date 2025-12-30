@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"] }
 color-eyre = "0.6.5"
+derive_more = { version = "2.1.1", features = ["from", "try_into"] }
 dirs = "6.0.0"
 engine = { path = "../engine" }
 

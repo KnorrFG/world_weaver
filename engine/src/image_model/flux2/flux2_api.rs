@@ -2,7 +2,6 @@ use color_eyre::{
     Result,
     eyre::{bail, ensure, eyre},
 };
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;

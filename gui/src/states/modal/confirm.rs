@@ -1,12 +1,13 @@
 use color_eyre::Result;
 use iced::{
-    Border, Color, Element, Length, Task,
+    Element, Length, Task,
     alignment::Horizontal,
-    widget::{button, column, container, row, scrollable, space, text},
+    widget::{button, column, container, row, scrollable, text},
 };
 
 use crate::{
-    Context, Message,
+    Context,
+    message::{Message, state_messages::ConfirmDialog as MyMessage},
     states::modal::{Dialog, DialogResult},
 };
 
@@ -33,14 +34,14 @@ impl ConfirmDialog {
 
 impl Dialog for ConfirmDialog {
     fn update(&mut self, event: Message, _ctx: &mut Context) -> Result<DialogResult> {
-        match event {
-            Message::ConfirmDialogYes => Ok(DialogResult::Close(
+        use MyMessage::*;
+        match event.try_into()? {
+            Yes => Ok(DialogResult::Close(
                 self.yes_msg.clone().map(Task::done).unwrap_or(Task::none()),
             )),
-            Message::ConfirmDialogNo => Ok(DialogResult::Close(
+            No => Ok(DialogResult::Close(
                 self.no_msg.clone().map(Task::done).unwrap_or(Task::none()),
             )),
-            _ => Ok(DialogResult::Stay),
         }
     }
 
@@ -52,8 +53,8 @@ impl Dialog for ConfirmDialog {
                     .width(Length::Shrink),
                 column![
                     row![
-                        button("No").on_press(Message::ConfirmDialogNo),
-                        button("Yes").on_press(Message::ConfirmDialogYes),
+                        button("No").on_press(MyMessage::No.into()),
+                        button("Yes").on_press(MyMessage::Yes.into()),
                     ]
                     .spacing(10)
                 ]

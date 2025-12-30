@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, pin::Pin};
 use crate::{
     HIST_SIZE, ImgModBox, LLMBox, N_PROPOSED_OPTIONS,
     game::stream_finder::{MatchResult, StreamFinder},
-    image_model::{self, Model},
+    image_model::{self},
     llm::{InputMessage, OutputMessage, Request, ResponseFragment},
 };
 

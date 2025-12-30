@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::fs;
 
 use clap::Parser;
 use color_eyre::{
@@ -9,23 +6,19 @@ use color_eyre::{
     eyre::{ensure, eyre},
 };
 use engine::{
-    game::{Game, WorldDescription},
-    image_model::{self, Flux2},
+    game::Game,
+    image_model::{self},
     llm::Claude,
     save_archive::SaveArchive,
 };
-use iced::{
-    Task, debug,
-    widget::{Column, button, column, text},
-};
+use iced::Task;
 use log::debug;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use world_weaver::{
-    CLAUDE_MODEL, Context, Gui, Message, PersistedState,
-    cli::{self, Cli, NewGame},
-    default_save_path, load_json_file, load_persisted_state, save_json_file, save_persisted_state,
-    states,
+    CLAUDE_MODEL, Gui, PersistedState,
+    cli::{self, Cli},
+    default_save_path, load_json_file, load_persisted_state,
+    message::state_messages,
 };
 
 pub fn main() -> Result<()> {
@@ -36,7 +29,10 @@ pub fn main() -> Result<()> {
 
     iced::application(
         move || match create_or_load_game(pstate.clone(), &cli) {
-            Ok((game, save)) => (Gui::new(game.clone(), save), Task::done(Message::Init)),
+            Ok((game, save)) => (
+                Gui::new(game.clone(), save),
+                Task::done(state_messages::Playing::Init.into()),
+            ),
             Err(e) => panic!("{e:#?}"),
         },
         Gui::update,
