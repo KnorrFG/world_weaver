@@ -18,7 +18,7 @@ use world_weaver::{
     CLAUDE_MODEL, Gui, PersistedState,
     cli::{self, Cli},
     default_save_path, load_json_file, load_persisted_state,
-    message::state_messages,
+    message::ui_messages,
 };
 
 pub fn main() -> Result<()> {
@@ -31,7 +31,7 @@ pub fn main() -> Result<()> {
         move || match create_or_load_game(pstate.clone(), &cli) {
             Ok((game, save)) => (
                 Gui::new(game.clone(), save),
-                Task::done(state_messages::Playing::Init.into()),
+                Task::done(ui_messages::Playing::Init.into()),
             ),
             Err(e) => panic!("{e:#?}"),
         },

@@ -8,7 +8,7 @@ use iced::{
 
 use crate::{
     Context, State,
-    message::Message,
+    message::UiMessage,
     state::{
         StateCommand, cmd,
         modal::{confirm::ConfirmDialog, edit::EditorModal, message::MessageDialog},
@@ -20,13 +20,13 @@ pub mod edit;
 pub mod message;
 
 pub trait Dialog: fmt::Debug {
-    fn update(&mut self, event: Message, ctx: &mut Context) -> Result<DialogResult>;
-    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, Message>;
+    fn update(&mut self, event: UiMessage, ctx: &mut Context) -> Result<DialogResult>;
+    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, UiMessage>;
 }
 
 pub enum DialogResult {
     Stay,
-    Close(Task<Message>),
+    Close(Task<UiMessage>),
 }
 
 #[derive(Debug)]
@@ -51,8 +51,8 @@ impl Modal<ConfirmDialog> {
     pub fn confirm(
         parent: Box<dyn State>,
         message: impl Into<String>,
-        yes_msg: Option<Message>,
-        no_msg: Option<Message>,
+        yes_msg: Option<UiMessage>,
+        no_msg: Option<UiMessage>,
     ) -> Self {
         Self::new(parent, ConfirmDialog::new(message, yes_msg, no_msg))
     }
@@ -61,7 +61,7 @@ impl Modal<ConfirmDialog> {
 /// Constructs a Modal wrapping an EditorModal
 impl<F> Modal<EditorModal<F>>
 where
-    F: Fn(String) -> Task<Message> + Clone + Send + Sync + 'static,
+    F: Fn(String) -> Task<UiMessage> + Clone + Send + Sync + 'static,
 {
     pub fn edit(
         parent: Box<dyn State>,
@@ -80,14 +80,14 @@ impl<D: Dialog> Modal<D> {
 }
 
 impl<D: Dialog + Clone + 'static> State for Modal<D> {
-    fn update(&mut self, event: Message, ctx: &mut Context) -> Result<StateCommand> {
+    fn update(&mut self, event: UiMessage, ctx: &mut Context) -> Result<StateCommand> {
         match self.dialog.update(event, ctx)? {
             DialogResult::Stay => cmd::none(),
             DialogResult::Close(task) => cmd::transition_with_task(self.parent.clone(), task),
         }
     }
 
-    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, Message> {
+    fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, UiMessage> {
         stack![
             self.parent.view(ctx),
             dim_layer(),
@@ -104,7 +104,7 @@ impl<D: Dialog + Clone + 'static> State for Modal<D> {
     }
 }
 
-fn dim_layer() -> Element<'static, Message> {
+fn dim_layer() -> Element<'static, UiMessage> {
     container(space())
         .width(Length::Fill)
         .height(Length::Fill)

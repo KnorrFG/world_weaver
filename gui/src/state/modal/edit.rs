@@ -1,6 +1,6 @@
 use crate::{
-    Context,
-    message::{Message, state_messages::EditDialog as MyMessage},
+    Context, TryIntoExt,
+    message::{UiMessage, ui_messages::EditDialog as MyMessage},
     state::{Dialog, modal::DialogResult},
 };
 use color_eyre::Result;
@@ -29,7 +29,7 @@ impl<F> std::fmt::Debug for EditorModal<F> {
 
 impl<F> EditorModal<F>
 where
-    F: Fn(String) -> Task<Message> + Clone + Send + Sync + 'static,
+    F: Fn(String) -> Task<UiMessage> + Clone + Send + Sync + 'static,
 {
     pub fn new(title: impl Into<String>, initial_content: impl Into<String>, on_save: F) -> Self {
         Self {
@@ -42,11 +42,11 @@ where
 
 impl<F> Dialog for EditorModal<F>
 where
-    F: Fn(String) -> Task<Message> + Clone + Send + Sync + 'static,
+    F: Fn(String) -> Task<UiMessage> + Clone + Send + Sync + 'static,
 {
-    fn update(&mut self, event: Message, _ctx: &mut Context) -> Result<DialogResult> {
+    fn update(&mut self, event: UiMessage, _ctx: &mut Context) -> Result<DialogResult> {
         use MyMessage::*;
-        match event.try_into()? {
+        match event.try_into_ex()? {
             Update(action) => {
                 self.editor_content.perform(action);
                 Ok(DialogResult::Stay)
@@ -59,7 +59,7 @@ where
         }
     }
 
-    fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, Message> {
+    fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, UiMessage> {
         let editor = text_editor(&self.editor_content).on_action(|a| MyMessage::Update(a).into());
 
         let content = column![

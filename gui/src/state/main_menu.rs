@@ -1,4 +1,4 @@
-use crate::State;
+use crate::{Context, State, message::UiMessage, state::StateCommand};
 
 #[derive(Debug)]
 pub struct MainMenu;
@@ -6,13 +6,17 @@ pub struct MainMenu;
 impl State for MainMenu {
     fn update(
         &mut self,
-        event: crate::Message,
-        ctx: &mut crate::Context,
-    ) -> color_eyre::eyre::Result<crate::StateCommand> {
+        event: UiMessage,
+        ctx: &mut Context,
+    ) -> color_eyre::eyre::Result<StateCommand> {
         todo!()
     }
 
-    fn render<'a>(&'a self, ctx: &crate::Context) -> iced::Element<'a, crate::Message> {
+    fn view<'a>(&'a self, ctx: &'a Context) -> iced::Element<'a, crate::message::UiMessage> {
+        todo!()
+    }
+
+    fn clone(&self) -> Box<dyn State> {
         todo!()
     }
 }

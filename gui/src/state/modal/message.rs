@@ -1,6 +1,6 @@
 use crate::{
-    Context, bold_text,
-    message::{Message, state_messages::MessageDialog as MyMessage},
+    Context, TryIntoExt, bold_text,
+    message::{UiMessage, ui_messages::MessageDialog as MyMessage},
 };
 
 use color_eyre::{Result, owo_colors::OwoColorize};
@@ -27,10 +27,10 @@ impl MessageDialog {
 }
 
 impl super::Dialog for MessageDialog {
-    fn update(&mut self, event: Message, _ctx: &mut Context) -> Result<DialogResult> {
+    fn update(&mut self, event: UiMessage, _ctx: &mut Context) -> Result<DialogResult> {
         use MyMessage::*;
 
-        match event.try_into()? {
+        match event.try_into_ex()? {
             Confirm => Ok(DialogResult::Close(Task::none())),
             EditAction(a) => {
                 if !matches!(a, Action::Edit(_)) {
@@ -41,7 +41,7 @@ impl super::Dialog for MessageDialog {
         }
     }
 
-    fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, Message> {
+    fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, UiMessage> {
         container(
             column![
                 bold_text(&self.title).size(20),

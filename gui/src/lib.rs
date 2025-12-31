@@ -4,7 +4,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use color_eyre::{Result, eyre::eyre};
+use color_eyre::{
+    Result,
+    eyre::{WrapErr as _, eyre},
+};
 use engine::{game::Game, image_model, save_archive::SaveArchive};
 use iced::{
     Element, Font, Task, Theme,
@@ -32,15 +35,8 @@ impl Gui {
     }
 
     pub fn update(&mut self, message: message::Message) -> Task<message::Message> {
-        let cmd = self.state.update(message, &mut self.ctx);
-
-        match cmd {
-            Ok(cmd) => {
-                if let Some(new_state) = cmd.transition {
-                    self.state = new_state;
-                }
-                cmd.task.unwrap_or(Task::none())
-            }
+        match self.try_update(message) {
+            Ok(task) => task,
             Err(e) => {
                 self.state = Modal::message(self.state.clone(), "Error", e.to_string()).boxed();
                 Task::none()
@@ -48,8 +44,24 @@ impl Gui {
         }
     }
 
+    fn try_update(&mut self, message: Message) -> Result<Task<Message>> {
+        match message {
+            Message::Ui(ui_message) => {
+                let cmd = self.state.update(ui_message, &mut self.ctx)?;
+                if let Some(new_state) = cmd.transition {
+                    self.state = new_state;
+                }
+                Ok(cmd
+                    .task
+                    .map(|t| t.map(Message::from))
+                    .unwrap_or(Task::none()))
+            }
+            Message::Context(context_message) => self.ctx.update(context_message),
+        }
+    }
+
     pub fn view(&self) -> Element<'_, message::Message> {
-        self.state.view(&self.ctx)
+        self.state.view(&self.ctx).map(|m| m.into())
     }
 
     pub fn theme(&self) -> Theme {
@@ -60,6 +72,12 @@ impl Gui {
 pub struct Context {
     game: Game,
     save: SaveArchive,
+}
+
+impl Context {
+    fn update(&self, message: ContextMessage) -> Result<Task<Message>> {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -134,7 +152,10 @@ macro_rules! elem_list {
 }
 pub(crate) use elem_list;
 
-use crate::state::{Modal, State, StateExt};
+use crate::{
+    message::{ContextMessage, Message},
+    state::{Modal, State, StateExt},
+};
 
 pub trait ElemHelper<'a, T> {
     fn into_elem(self) -> Element<'a, T>;
@@ -165,5 +186,23 @@ fn bold_default_font() -> Font {
     Font {
         weight: font::Weight::Bold,
         ..Font::DEFAULT
+    }
+}
+
+pub trait TryIntoExt<T> {
+    fn try_into_ex(self) -> color_eyre::Result<T>;
+}
+
+impl<T, Target, E> TryIntoExt<Target> for T
+where
+    T: TryInto<Target, Error = E>,
+    T: fmt::Debug,
+    T: Clone,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn try_into_ex(self) -> color_eyre::Result<Target> {
+        self.clone()
+            .try_into()
+            .with_context(|| format!("{self:#?}"))
     }
 }

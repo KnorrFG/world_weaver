@@ -6,23 +6,23 @@ use iced::{
 };
 
 use crate::{
-    Context,
-    message::{Message, state_messages::ConfirmDialog as MyMessage},
+    Context, TryIntoExt,
+    message::{UiMessage, ui_messages::ConfirmDialog as MyMessage},
     state::modal::{Dialog, DialogResult},
 };
 
 #[derive(Debug, Clone)]
 pub struct ConfirmDialog {
     message: String,
-    yes_msg: Option<Message>,
-    no_msg: Option<Message>,
+    yes_msg: Option<UiMessage>,
+    no_msg: Option<UiMessage>,
 }
 
 impl ConfirmDialog {
     pub fn new(
         message: impl Into<String>,
-        yes_msg: Option<Message>,
-        no_msg: Option<Message>,
+        yes_msg: Option<UiMessage>,
+        no_msg: Option<UiMessage>,
     ) -> Self {
         Self {
             message: message.into(),
@@ -33,9 +33,9 @@ impl ConfirmDialog {
 }
 
 impl Dialog for ConfirmDialog {
-    fn update(&mut self, event: Message, _ctx: &mut Context) -> Result<DialogResult> {
+    fn update(&mut self, event: UiMessage, _ctx: &mut Context) -> Result<DialogResult> {
         use MyMessage::*;
-        match event.try_into()? {
+        match event.try_into_ex()? {
             Yes => Ok(DialogResult::Close(
                 self.yes_msg.clone().map(Task::done).unwrap_or(Task::none()),
             )),
@@ -45,7 +45,7 @@ impl Dialog for ConfirmDialog {
         }
     }
 
-    fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, Message> {
+    fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, UiMessage> {
         container(
             column![
                 container(scrollable(text(&self.message)))

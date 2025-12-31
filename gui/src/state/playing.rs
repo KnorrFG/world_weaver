@@ -20,8 +20,8 @@ use iced::{
 use nonempty::nonempty;
 
 use crate::{
-    Context, ElemHelper, State, StringError, elem_list, italic_text,
-    message::{Message, state_messages::Playing as MyMessage},
+    Context, ElemHelper, State, StringError, TryIntoExt, elem_list, italic_text,
+    message::{UiMessage, ui_messages::Playing as MyMessage},
     state::{Modal, StateCommand, cmd, modal::confirm::ConfirmDialog},
 };
 
@@ -207,11 +207,11 @@ impl SubState {
 impl State for Playing {
     fn update(
         &mut self,
-        message: Message,
+        message: UiMessage,
         ctx: &mut crate::Context,
     ) -> color_eyre::eyre::Result<StateCommand> {
         use MyMessage::*;
-        match message.try_into()? {
+        match message.try_into_ex()? {
             OutputComplete(turn_output) => {
                 let output = turn_output?;
 
@@ -485,7 +485,7 @@ impl State for Playing {
         }
     }
 
-    fn view<'a>(&'a self, ctx: &'a crate::Context) -> iced::Element<'a, Message> {
+    fn view<'a>(&'a self, ctx: &'a crate::Context) -> iced::Element<'a, UiMessage> {
         let mut sidebar = Column::new();
         if let Some((handle, caption)) = &self.image_data {
             sidebar = sidebar.extend([
@@ -507,8 +507,8 @@ impl State for Playing {
             // .width(Length::Shrink);
         };
 
-        let mut main_col: Vec<Element<Message>> = vec![];
-        let mut text_col: Vec<Element<Message>> = vec![];
+        let mut main_col: Vec<Element<UiMessage>> = vec![];
+        let mut text_col: Vec<Element<UiMessage>> = vec![];
         if let Ok(td) = self.sub_state.turn_data() {
             text_col.push(italic_text(&td.input.player_action).into());
             text_col.push(
@@ -617,7 +617,7 @@ impl State for Playing {
     }
 }
 
-fn proposed_action_button<'a>(text: &'a str) -> Button<'a, Message> {
+fn proposed_action_button<'a>(text: &'a str) -> Button<'a, UiMessage> {
     button(text).on_press(MyMessage::ProposedActionButtonPressed(text.into()).into())
 }
 
@@ -625,7 +625,7 @@ fn mk_turn_selection_buttons<'a>(
     ctx: &'a Context,
     current_turn: usize,
     goto_turn_input: &str,
-) -> impl Into<Element<'a, Message>> {
+) -> impl Into<Element<'a, UiMessage>> {
     let mut row = vec![];
     if current_turn > 0 {
         row.push(
@@ -659,7 +659,7 @@ fn mk_input_ui_portion<'a>(
     button_w: u32,
     action_text_content: &'a text_editor::Content,
     gm_instruction_text_content: &'a text_editor::Content,
-) -> impl IntoIterator<Item = Element<'a, Message>> {
+) -> impl IntoIterator<Item = Element<'a, UiMessage>> {
     elem_list![
         widget::Space::new().height(20),
         proposed_action_button(&output.proposed_next_actions[0]).width(button_w),
@@ -687,7 +687,7 @@ fn mk_input_ui_portion<'a>(
     ]
 }
 
-fn mk_view_hidden_info_button() -> Column<'static, Message> {
+fn mk_view_hidden_info_button() -> Column<'static, UiMessage> {
     widget::column![button("👁").on_press(MyMessage::ShowHiddenText.into())]
         .width(Length::Fill)
         .align_x(Horizontal::Right)
