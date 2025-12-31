@@ -1,9 +1,10 @@
 use crate::{
-    Context, TryIntoExt, bold_text,
+    TryIntoExt, bold_text,
+    context::Context,
     message::{UiMessage, ui_messages::MessageDialog as MyMessage},
 };
 
-use color_eyre::{Result, owo_colors::OwoColorize};
+use color_eyre::Result;
 use iced::{
     Border, Color, Element, Length, Task,
     widget::{button, column, container, scrollable, text_editor, text_editor::Action},

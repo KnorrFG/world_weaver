@@ -7,8 +7,9 @@ use iced::{
 };
 
 use crate::{
-    Context, State,
+    State,
     message::UiMessage,
+    context::Context,
     state::{
         StateCommand, cmd,
         modal::{confirm::ConfirmDialog, edit::EditorModal, message::MessageDialog},

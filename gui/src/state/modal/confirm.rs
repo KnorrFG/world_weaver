@@ -6,8 +6,9 @@ use iced::{
 };
 
 use crate::{
-    Context, TryIntoExt,
+    TryIntoExt,
     message::{UiMessage, ui_messages::ConfirmDialog as MyMessage},
+    context::Context,
     state::modal::{Dialog, DialogResult},
 };
 

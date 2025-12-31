@@ -1,4 +1,10 @@
 use derive_more::{From, TryInto};
+use engine::{
+    game::{self, TurnOutput},
+    llm,
+};
+
+use crate::StringError;
 
 #[derive(Debug, Clone, From, TryInto)]
 pub enum Message {
@@ -8,7 +14,11 @@ pub enum Message {
 
 #[derive(Debug, Clone)]
 pub enum ContextMessage {
-    Foo,
+    OutputComplete(Result<TurnOutput, StringError>),
+    SummaryFinished(Result<Option<llm::OutputMessage>, StringError>),
+    NewTextFragment(Result<String, StringError>),
+    Init,
+    ImageReady(Result<game::Image, StringError>),
 }
 
 #[derive(Debug, Clone, From, TryInto)]
@@ -22,13 +32,10 @@ pub enum UiMessage {
 
 pub mod ui_messages {
     use super::*;
-    use engine::{
-        game::{self, TurnOutput},
-        llm,
-    };
+    
     use iced::widget::text_editor;
 
-    use crate::StringError;
+    
 
     macro_rules! ui_enums {
         ($($pub:vis enum $name:ident { $( $variant:ident $( ( $($body:tt)* ) )? ),+ $(,)? })+) => {
@@ -49,15 +56,10 @@ pub mod ui_messages {
 
     ui_enums! {
         pub enum Playing {
-            OutputComplete(Result<TurnOutput, StringError>),
-            NewTextFragment(Result<String, StringError>),
-            ImageReady(Result<game::Image, StringError>),
-            Init,
             UpdateActionText(text_editor::Action),
             UpdateGMInstructionText(text_editor::Action),
             ProposedActionButtonPressed(String),
             Submit,
-            SummaryFinished(Result<Option<llm::OutputMessage>, StringError>),
             PrevTurnButtonPressed,
             NextTurnButtonPressed,
             UpdateTurnInput(String),

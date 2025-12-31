@@ -16,6 +16,7 @@ use iced::{
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub mod cli;
+pub mod context;
 pub mod message;
 pub mod state;
 
@@ -23,14 +24,14 @@ const APP_NAME: &str = "World Weaver";
 
 pub struct Gui {
     state: Box<dyn State>,
-    ctx: Context,
+    ctx: context::Context,
 }
 
 impl Gui {
     pub fn new(game: Game, save: SaveArchive) -> Self {
         Gui {
             state: Box::new(state::Playing::new()),
-            ctx: Context { game, save },
+            ctx: context::Context::new(game, save),
         }
     }
 
@@ -66,17 +67,6 @@ impl Gui {
 
     pub fn theme(&self) -> Theme {
         Theme::SolarizedLight
-    }
-}
-
-pub struct Context {
-    game: Game,
-    save: SaveArchive,
-}
-
-impl Context {
-    fn update(&self, message: ContextMessage) -> Result<Task<Message>> {
-        todo!()
     }
 }
 
@@ -153,7 +143,7 @@ macro_rules! elem_list {
 pub(crate) use elem_list;
 
 use crate::{
-    message::{ContextMessage, Message},
+    message::Message,
     state::{Modal, State, StateExt},
 };
 

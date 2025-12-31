@@ -11,7 +11,10 @@ pub use playing::Playing;
 pub mod modal;
 pub use modal::{Dialog, Modal};
 
-use crate::{Context, message::UiMessage};
+use crate::{
+    context::Context,
+    message::{Message, UiMessage},
+};
 
 pub trait State: fmt::Debug {
     fn update(&mut self, event: UiMessage, ctx: &mut Context) -> Result<StateCommand>;
@@ -43,20 +46,26 @@ impl<T: std::ops::DerefMut<Target = dyn State> + fmt::Debug> State for T {
 
 #[derive(Debug, Default)]
 pub struct StateCommand {
-    pub task: Option<Task<UiMessage>>,
+    pub task: Option<Task<Message>>,
     pub transition: Option<Box<dyn State>>,
 }
 
 pub mod cmd {
+    use iced::advanced::graphics::futures::MaybeSend;
+
     use super::*;
 
     pub fn none() -> Result<StateCommand> {
         Ok(StateCommand::default())
     }
 
-    pub fn task(t: Task<UiMessage>) -> Result<StateCommand> {
+    pub fn task<T>(t: Task<T>) -> Result<StateCommand>
+    where
+        T: Into<Message> + 'static,
+        T: MaybeSend,
+    {
         Ok(StateCommand {
-            task: Some(t),
+            task: Some(t.map(|x| x.into())),
             transition: None,
         })
     }
@@ -68,12 +77,13 @@ pub mod cmd {
         })
     }
 
-    pub fn transition_with_task(
-        s: impl State + 'static,
-        t: Task<UiMessage>,
-    ) -> Result<StateCommand> {
+    pub fn transition_with_task<T>(s: impl State + 'static, t: Task<T>) -> Result<StateCommand>
+    where
+        T: Into<Message> + 'static,
+        T: MaybeSend,
+    {
         Ok(StateCommand {
-            task: Some(t),
+            task: Some(t.map(|x| x.into())),
             transition: Some(Box::new(s)),
         })
     }

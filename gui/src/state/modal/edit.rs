@@ -1,6 +1,7 @@
 use crate::{
-    Context, TryIntoExt,
+    TryIntoExt,
     message::{UiMessage, ui_messages::EditDialog as MyMessage},
+    context::Context,
     state::{Dialog, modal::DialogResult},
 };
 use color_eyre::Result;

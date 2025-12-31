@@ -1,39 +1,34 @@
-use std::mem;
 
 use color_eyre::{
     Result,
-    eyre::{bail, ensure, eyre},
+    eyre::ensure,
 };
-use engine::game::{AdvanceResult, Image, StartResultOrData, TurnData, TurnInput, TurnOutput};
+use engine::game::{TurnInput, TurnOutput};
 use iced::{
     Color, Element, Length, Task, Theme,
     alignment::{Horizontal, Vertical},
     padding,
     widget::{
         self, Button, Column, button, container,
-        image::Handle,
         markdown, row, scrollable, space,
         text_editor::{self, Edit},
         text_input,
     },
 };
-use nonempty::nonempty;
 
 use crate::{
-    Context, ElemHelper, State, StringError, TryIntoExt, elem_list, italic_text,
-    message::{UiMessage, ui_messages::Playing as MyMessage},
+    ElemHelper, State, TryIntoExt,
+    context::{Complete, Context, InThePast, SubState},
+    elem_list, italic_text,
+    message::{Message, UiMessage, ui_messages::Playing as MyMessage},
     state::{Modal, StateCommand, cmd, modal::confirm::ConfirmDialog},
 };
 
 #[derive(Debug, Clone)]
 pub struct Playing {
-    sub_state: SubState,
-    current_output: String,
     goto_turn_input: Option<usize>,
-    markdown: Vec<markdown::Item>,
     action_text_content: text_editor::Content,
     gm_instruction_text_content: text_editor::Content,
-    image_data: Option<(iced::advanced::image::Handle, String)>,
 }
 
 enum EditorId {
@@ -44,54 +39,10 @@ enum EditorId {
 impl Playing {
     pub fn new() -> Self {
         Self {
-            sub_state: SubState::Uninit,
-            current_output: "".into(),
             goto_turn_input: None,
             action_text_content: text_editor::Content::default(),
             gm_instruction_text_content: text_editor::Content::default(),
-            markdown: vec![],
-            image_data: None,
         }
-    }
-
-    fn request_summary(
-        &mut self,
-        ctx: &mut Context,
-        input: TurnInput,
-        output: TurnOutput,
-        image: Image,
-    ) -> Result<StateCommand> {
-        self.sub_state = SubState::WaitingForSummary {
-            input,
-            output,
-            image,
-        };
-        let fut = ctx.game.mk_summary_if_neccessary();
-        cmd::task(Task::perform(fut, |res| {
-            MyMessage::SummaryFinished(res.map_err(StringError::from)).into()
-        }))
-    }
-
-    fn complete_turn(
-        &mut self,
-        ctx: &mut Context,
-        input: TurnInput,
-        output: TurnOutput,
-        image: Image,
-        summary: Option<String>,
-    ) -> Result<()> {
-        let id = ctx.save.append_image(&image.jpeg_bytes)?;
-        ctx.game.update(
-            input,
-            output.clone(),
-            nonempty![id],
-            nonempty![image.caption],
-            summary,
-        )?;
-        ctx.save.write_game_data(&ctx.game.data)?;
-        self.sub_state = SubState::Complete(ctx.game.data.turn_data.last().unwrap().clone());
-        self.reset_action_editors();
-        Ok(())
     }
 
     fn reset_action_editors(&mut self) {
@@ -105,55 +56,13 @@ impl Playing {
         editor: EditorId,
     ) -> Result<StateCommand, color_eyre::eyre::Error> {
         if let text_editor::Action::Edit(Edit::Enter) = action {
-            cmd::task(Task::done(MyMessage::Submit.into()))
+            cmd::task(Task::done(MyMessage::Submit))
         } else {
             match editor {
                 EditorId::PlayerAction => self.action_text_content.perform(action),
                 EditorId::GMInstruction => self.gm_instruction_text_content.perform(action),
             }
             cmd::none()
-        }
-    }
-
-    /// loading completed turn n actually means loading turn n+1, but this way it's less confusing
-    fn load_completed_turn(&mut self, ctx: &mut Context, target_turn: usize) -> Result<()> {
-        let turn_data = ctx
-            .game
-            .data
-            .turn_data
-            .get(target_turn)
-            .ok_or(eyre!("Invalid target turn: {target_turn}"))?;
-        self.image_data = Some((
-            Handle::from_bytes(ctx.save.read_image(*turn_data.image_ids.first())?),
-            turn_data.image_captions.first().clone(),
-        ));
-        self.markdown = markdown::parse(&turn_data.output.text).collect();
-
-        // this looks wrong but is right. If we load the completed turn 0, the displayed output
-        // is the ouput of turn 0, but that means we're actually in turn 1
-        if target_turn + 1 == ctx.game.current_turn() {
-            self.sub_state = SubState::Complete(turn_data.clone());
-        } else {
-            self.sub_state = SubState::InThePast {
-                completed_turn: target_turn,
-                data: turn_data.clone(),
-            };
-        }
-        Ok(())
-    }
-
-    /// turn semantics are as follows:
-    /// when the game starts, that's turn 0, before there is any input or output
-    /// the result of the 0th turn is stored in game.data_turn_data[0].
-    /// As soon as you finish the first turn (index 0), you are in turn 1.
-    /// But in turn 1, you do see the outputs of turn 0;
-    fn current_turn(&self, ctx: &Context) -> usize {
-        match &self.sub_state {
-            SubState::InThePast {
-                completed_turn,
-                data: _data,
-            } => *completed_turn + 1,
-            _ => ctx.game.current_turn(),
         }
     }
 
@@ -165,227 +74,39 @@ impl Playing {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-enum SubState {
-    #[default]
-    Uninit,
-    Complete(TurnData),
-    WaitingForOutput {
-        input: TurnInput,
-        output: Option<TurnOutput>,
-        image: Option<Image>,
-    },
-    WaitingForSummary {
-        input: TurnInput,
-        output: TurnOutput,
-        image: Image,
-    },
-    InThePast {
-        completed_turn: usize,
-        data: TurnData,
-    },
-}
-
-impl SubState {
-    fn is_complete(&self) -> bool {
-        matches!(self, Self::Complete(_))
-    }
-
-    fn take(&mut self) -> Self {
-        mem::take(self)
-    }
-
-    fn turn_data(&self) -> Result<&TurnData> {
-        match self {
-            Self::Complete(td) => Ok(td),
-            Self::InThePast { data, .. } => Ok(data),
-            _ => Err(eyre!("Trying to get turn-data while being: {self:?}")),
-        }
-    }
-}
-
 impl State for Playing {
     fn update(
         &mut self,
         message: UiMessage,
-        ctx: &mut crate::Context,
+        ctx: &mut Context,
     ) -> color_eyre::eyre::Result<StateCommand> {
         use MyMessage::*;
         match message.try_into_ex()? {
-            OutputComplete(turn_output) => {
-                let output = turn_output?;
-
-                let SubState::WaitingForOutput {
-                    input,
-                    output: _,
-                    image,
-                } = self.sub_state.take()
-                else {
-                    bail!("Not in WaitingForOutput substate when receiving OutputComplete");
-                };
-
-                if let Some(image) = image {
-                    self.request_summary(ctx, input, output, image)
-                } else {
-                    self.sub_state = SubState::WaitingForOutput {
-                        input,
-                        output: Some(output),
-                        image: None,
-                    };
-                    cmd::none()
-                }
-            }
-            NewTextFragment(t) => {
-                self.current_output.push_str(&t?);
-                self.markdown = markdown::parse(&self.current_output).collect();
-                cmd::none()
-            }
-            Init => match ctx.game.start_or_get_last_output() {
-                StartResultOrData::StartResult(
-                    AdvanceResult {
-                        text_stream,
-                        round_output,
-                        image,
-                    },
-                    input,
-                ) => {
-                    let output_fut = Task::perform(round_output, |res| {
-                        OutputComplete(res.map_err(StringError::from)).into()
-                    });
-                    let image_fut = Task::perform(image, |res| {
-                        ImageReady(res.map_err(StringError::from)).into()
-                    });
-                    let stream_task = Task::run(text_stream, |res| {
-                        NewTextFragment(res.map_err(StringError::from)).into()
-                    });
-                    self.sub_state = SubState::WaitingForOutput {
-                        input,
-                        output: None,
-                        image: None,
-                    };
-                    self.current_output = String::new();
-                    cmd::task(Task::batch([output_fut, stream_task, image_fut]))
-                }
-                StartResultOrData::Data(turn_data) => {
-                    self.current_output = turn_data.output.text.clone();
-                    self.sub_state = SubState::Complete(turn_data.clone());
-                    self.image_data = Some((
-                        Handle::from_bytes(ctx.save.read_image(*turn_data.image_ids.first())?),
-                        turn_data.image_captions.first().clone(),
-                    ));
-                    self.markdown = markdown::parse(&self.current_output).collect();
-                    cmd::none()
-                }
-            },
             UpdateActionText(action) => self.update_editor_content(action, EditorId::PlayerAction),
             UpdateGMInstructionText(action) => {
                 self.update_editor_content(action, EditorId::GMInstruction)
             }
             ProposedActionButtonPressed(s) => {
                 if self.action_text_content.text() == s {
-                    cmd::task(Task::done(Submit.into()))
+                    cmd::task(Task::done(Submit))
                 } else {
                     self.action_text_content = text_editor::Content::with_text(&s);
                     cmd::none()
                 }
             }
             Submit => {
-                // let input = TurnInput::player_action(self.action_text_content.text());
                 let input = TurnInput {
                     player_action: self.action_text_content.text(),
                     gm_instruction: self.gm_instruction_text_content.text(),
                 };
-                self.current_output.clear();
-                self.markdown.clear();
-                let AdvanceResult {
-                    text_stream,
-                    round_output,
-                    image,
-                } = ctx.game.send_to_llm(
-                    input.clone(),
-                    ctx.game.imgmod.model().extra_generation_instructions(),
-                );
-                self.sub_state = SubState::WaitingForOutput {
-                    input,
-                    output: None,
-                    image: None,
-                };
-                cmd::task(Task::batch([
-                    Task::perform(round_output, |x| {
-                        OutputComplete(x.map_err(StringError::from)).into()
-                    }),
-                    Task::perform(image, |x| ImageReady(x.map_err(StringError::from)).into()),
-                    Task::run(text_stream, |x| {
-                        NewTextFragment(x.map_err(StringError::from)).into()
-                    }),
-                ]))
-            }
-            ImageReady(image) => {
-                let img = image?;
-                self.image_data = Some((
-                    Handle::from_bytes(img.jpeg_bytes.clone()),
-                    img.caption.clone(),
-                ));
-
-                let SubState::WaitingForOutput {
-                    input,
-                    output,
-                    image: _,
-                } = mem::take(&mut self.sub_state)
-                else {
-                    bail!("Not in WaitingForOutput substate when receiving ImageReady");
-                };
-
-                if let Some(output) = output {
-                    self.request_summary(ctx, input, output, img)
-                } else {
-                    self.sub_state = SubState::WaitingForOutput {
-                        input,
-                        output: None,
-                        image: Some(img),
-                    };
-                    cmd::none()
-                }
-            }
-            SummaryFinished(output_message) => {
-                let SubState::WaitingForSummary {
-                    input,
-                    output,
-                    image,
-                } = mem::take(&mut self.sub_state)
-                else {
-                    bail!("Not in Waiting For Summary while receiving SummaryFinished");
-                };
-                self.complete_turn(ctx, input, output, image, output_message?.map(|m| m.text))?;
-                cmd::none()
+                cmd::task(ctx.generate_new_turn(input))
             }
             PrevTurnButtonPressed => {
-                let target_turn = match &self.sub_state {
-                    SubState::Complete(_) => ctx.game.current_turn() - 2,
-                    SubState::InThePast {
-                        completed_turn: turn,
-                        ..
-                    } => *turn - 1,
-                    other => bail!(
-                        "PrevTurnButtonPressed but Substate is not Complete or InThePast: {:?}",
-                        other
-                    ),
-                };
-                self.load_completed_turn(ctx, target_turn)?;
+                ctx.load_prev_turn()?;
                 cmd::none()
             }
             NextTurnButtonPressed => {
-                let target_turn = match &self.sub_state {
-                    SubState::InThePast {
-                        completed_turn: turn,
-                        ..
-                    } => *turn + 1,
-                    other => bail!(
-                        "PrevTurnButtonPressed but Substate is not Complete or InThePast: {:?}",
-                        other
-                    ),
-                };
-                self.load_completed_turn(ctx, target_turn)?;
+                ctx.load_next_turn()?;
                 cmd::none()
             }
             UpdateTurnInput(inp) => {
@@ -398,12 +119,12 @@ impl State for Playing {
                         (1..=ctx.game.current_turn()).contains(&target),
                         "Invalid turn number"
                     );
-                    self.load_completed_turn(ctx, target - 1)?;
+                    ctx.load_completed_turn(target - 1)?;
                 }
                 cmd::none()
             }
             GoToCurrentTurn => {
-                self.load_completed_turn(ctx, ctx.game.current_turn() - 1)?;
+                ctx.load_completed_turn(ctx.game.current_turn() - 1)?;
                 cmd::none()
             }
             LoadGameFromCurrentPastButtonPressed => cmd::transition(Modal::new(
@@ -415,25 +136,12 @@ impl State for Playing {
                 ),
             )),
             ConfirmLoadGameFromCurrentPast => {
-                let SubState::InThePast {
-                    completed_turn,
-                    data,
-                } = self.sub_state.take()
-                else {
-                    bail!("ConfirmLoadGameFromPast received, but not in SubState::InThePast");
-                };
-                ctx.save.clip_after_turn(completed_turn)?;
-                ctx.game.data = ctx.save.read_game_data()?;
-                self.sub_state = SubState::Complete(data);
+                ctx.load_from_current_past()?;
                 self.reset_action_editors();
                 cmd::none()
             }
             ShowHiddenText => {
-                let hidden_info = match &self.sub_state {
-                    SubState::InThePast { data, .. } => &data.output.secret_info,
-                    SubState::Complete(turn_data) => &turn_data.output.secret_info,
-                    other => bail!("Invalid substate when seeing ShowHiddenText: {other:#?}",),
-                };
+                let hidden_info = ctx.hidden_info()?;
                 cmd::transition(Modal::edit(
                     State::clone(self),
                     "Hidden Information",
@@ -442,36 +150,11 @@ impl State for Playing {
                 ))
             }
             UpdateHiddenInfo(val) => {
-                match &mut self.sub_state {
-                    SubState::InThePast {
-                        data,
-                        completed_turn,
-                    } => {
-                        data.output.secret_info = val.clone();
-                        ctx.game.data.turn_data[*completed_turn].output.secret_info = val;
-                    }
-                    SubState::Complete(turn_data) => {
-                        turn_data.output.secret_info = val.clone();
-                        ctx.game
-                            .data
-                            .turn_data
-                            .last_mut()
-                            .unwrap()
-                            .output
-                            .secret_info = val;
-                    }
-                    other => bail!("Invalid substate when seeing UpdateHiddenInfo: {other:#?}",),
-                }
-
-                ctx.save.write_game_data(&ctx.game.data)?;
+                ctx.update_hidden_info(val)?;
                 cmd::none()
             }
             ShowImageDescription => {
-                let img_info = match &self.sub_state {
-                    SubState::InThePast { data, .. } => &data.output.image_description,
-                    SubState::Complete(turn_data) => &turn_data.output.image_description,
-                    other => bail!("Invalid substate when seeing UpdateHiddenInfo: {other:#?}",),
-                };
+                let img_info = ctx.image_info()?;
                 cmd::transition(Modal::message(
                     State::clone(self),
                     "Image Description",
@@ -479,20 +162,22 @@ impl State for Playing {
                 ))
             }
             CopyInputToClipboard => {
-                let td = self.sub_state.turn_data()?;
-                cmd::task(iced::clipboard::write(td.input.player_action.clone()))
+                let input = ctx.input()?;
+                cmd::task(iced::clipboard::write::<Message>(
+                    input.player_action.clone(),
+                ))
             }
         }
     }
 
-    fn view<'a>(&'a self, ctx: &'a crate::Context) -> iced::Element<'a, UiMessage> {
+    fn view<'a>(&'a self, ctx: &'a Context) -> iced::Element<'a, UiMessage> {
         let mut sidebar = Column::new();
-        if let Some((handle, caption)) = &self.image_data {
+        if let Some((handle, caption)) = &ctx.image_data {
             sidebar = sidebar.extend([
                 container(widget::image(handle).height(Length::Fill).expand(true))
                     .max_width(832)
                     .into(),
-                if self.sub_state.turn_data().is_ok() {
+                if ctx.sub_state.turn_data().is_ok() {
                     row![
                         widget::text(caption),
                         widget::button("👁").on_press(MyMessage::ShowImageDescription.into())
@@ -509,7 +194,7 @@ impl State for Playing {
 
         let mut main_col: Vec<Element<UiMessage>> = vec![];
         let mut text_col: Vec<Element<UiMessage>> = vec![];
-        if let Ok(td) = self.sub_state.turn_data() {
+        if let Ok(td) = ctx.sub_state.turn_data() {
             text_col.push(italic_text(&td.input.player_action).into());
             text_col.push(
                 widget::row![
@@ -522,7 +207,7 @@ impl State for Playing {
         }
 
         text_col.push(
-            markdown::view(&self.markdown, Theme::TokyoNight)
+            markdown::view(&ctx.output_markdown, Theme::TokyoNight)
                 .map(|_| unreachable!())
                 .into(),
         );
@@ -530,8 +215,8 @@ impl State for Playing {
         main_col.push(widget::column(text_col).spacing(20).into());
 
         let button_w = 500;
-        match &self.sub_state {
-            SubState::Complete(turn_data) => {
+        match &ctx.sub_state {
+            SubState::Complete(Complete { turn_data }) => {
                 let elems = mk_input_ui_portion(
                     &turn_data.output,
                     button_w,
@@ -557,10 +242,10 @@ impl State for Playing {
                         .into(),
                 ]);
             }
-            SubState::InThePast {
+            SubState::InThePast(InThePast {
                 completed_turn: turn,
                 data: _data,
-            } => {
+            }) => {
                 let elems = elem_list![
                     widget::Space::new().height(20),
                     mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()).into(),
@@ -592,12 +277,7 @@ impl State for Playing {
         .spacing(20);
 
         let main_col = widget::column![
-            widget::text!(
-                "{} - Turn {}",
-                ctx.game.world_name(),
-                self.current_turn(ctx),
-            )
-            .size(32),
+            widget::text!("{} - Turn {}", ctx.game.world_name(), ctx.current_turn()).size(32),
             widget::rule::horizontal(2),
             container(text_row).center_x(Length::Fill).padding(20)
         ]
@@ -651,7 +331,7 @@ fn mk_turn_selection_buttons<'a>(
         );
     }
 
-    widget::column(row)
+    widget::row(row)
 }
 
 fn mk_input_ui_portion<'a>(
