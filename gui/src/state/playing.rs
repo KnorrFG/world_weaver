@@ -1,7 +1,6 @@
-
 use color_eyre::{
     Result,
-    eyre::ensure,
+    eyre::{ensure, eyre},
 };
 use engine::game::{TurnInput, TurnOutput};
 use iced::{
@@ -9,8 +8,7 @@ use iced::{
     alignment::{Horizontal, Vertical},
     padding,
     widget::{
-        self, Button, Column, button, container,
-        markdown, row, scrollable, space,
+        self, Button, Column, button, container, markdown, row, scrollable, space,
         text_editor::{self, Edit},
         text_input,
     },
@@ -18,7 +16,7 @@ use iced::{
 
 use crate::{
     ElemHelper, State, TryIntoExt,
-    context::{Complete, Context, InThePast, SubState},
+    context::game_context::{Complete, GameContext as Context, InThePast, SubState},
     elem_list, italic_text,
     message::{Message, UiMessage, ui_messages::Playing as MyMessage},
     state::{Modal, StateCommand, cmd, modal::confirm::ConfirmDialog},
@@ -78,8 +76,13 @@ impl State for Playing {
     fn update(
         &mut self,
         message: UiMessage,
-        ctx: &mut Context,
+        ctx: &mut crate::context::Context,
     ) -> color_eyre::eyre::Result<StateCommand> {
+        let ctx = ctx
+            .game
+            .as_mut()
+            .ok_or(eyre!("No game in context while being in playing state"))?;
+
         use MyMessage::*;
         match message.try_into_ex()? {
             UpdateActionText(action) => self.update_editor_content(action, EditorId::PlayerAction),
@@ -99,6 +102,7 @@ impl State for Playing {
                     player_action: self.action_text_content.text(),
                     gm_instruction: self.gm_instruction_text_content.text(),
                 };
+                self.reset_action_editors();
                 cmd::task(ctx.generate_new_turn(input))
             }
             PrevTurnButtonPressed => {
@@ -167,10 +171,25 @@ impl State for Playing {
                     input.player_action.clone(),
                 ))
             }
+            RegenerateButtonPressed => cmd::transition(Modal::edit(
+                State::clone(self),
+                "What do you want to change",
+                "",
+                |s| Task::done(MyMessage::RegenerateMessage(s).into()),
+            )),
+            RegenerateMessage(s) => {
+                self.reset_action_editors();
+                cmd::task(ctx.regenerate_turn(s)?)
+            }
         }
     }
 
-    fn view<'a>(&'a self, ctx: &'a Context) -> iced::Element<'a, UiMessage> {
+    fn view<'a>(&'a self, ctx: &'a crate::context::Context) -> iced::Element<'a, UiMessage> {
+        let ctx = ctx
+            .game
+            .as_ref()
+            .expect("No game in context while being in playing state");
+
         let mut sidebar = Column::new();
         if let Some((handle, caption)) = &ctx.image_data {
             sidebar = sidebar.extend([
@@ -194,8 +213,8 @@ impl State for Playing {
 
         let mut main_col: Vec<Element<UiMessage>> = vec![];
         let mut text_col: Vec<Element<UiMessage>> = vec![];
-        if let Ok(td) = ctx.sub_state.turn_data() {
-            text_col.push(italic_text(&td.input.player_action).into());
+        if let Ok(ti) = ctx.input() {
+            text_col.push(italic_text(&ti.player_action).into());
             text_col.push(
                 widget::row![
                     space::horizontal(),
@@ -224,14 +243,19 @@ impl State for Playing {
                     &self.gm_instruction_text_content,
                 )
                 .into_iter()
-                .chain([
-                    widget::rule::horizontal(1).into(),
+                .chain(elem_list![
+                    widget::rule::horizontal(1),
                     mk_turn_selection_buttons(
                         ctx,
                         ctx.game.current_turn(),
                         &self.goto_turn_string(),
-                    )
-                    .into(),
+                    ),
+                    row![
+                        space::horizontal(),
+                        button("regenerate turn")
+                            .on_press(MyMessage::RegenerateButtonPressed.into()),
+                        space::horizontal(),
+                    ]
                 ]);
                 main_col.extend([
                     mk_view_hidden_info_button().into(),
@@ -248,7 +272,7 @@ impl State for Playing {
             }) => {
                 let elems = elem_list![
                     widget::Space::new().height(20),
-                    mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()).into(),
+                    mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()),
                     button("Goto current turn").on_press(MyMessage::GoToCurrentTurn.into()),
                     button("Load game from here")
                         .on_press(MyMessage::LoadGameFromCurrentPastButtonPressed.into())
@@ -305,7 +329,7 @@ fn mk_turn_selection_buttons<'a>(
     ctx: &'a Context,
     current_turn: usize,
     goto_turn_input: &str,
-) -> impl Into<Element<'a, UiMessage>> {
+) -> row::Row<'a, UiMessage> {
     let mut row = vec![];
     if current_turn > 0 {
         row.push(

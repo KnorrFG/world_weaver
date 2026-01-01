@@ -177,7 +177,7 @@ impl Game {
     }
 
     pub fn world_name(&self) -> &str {
-        "Worlds don't have names yet"
+        &self.data.world_description.name
     }
 
     pub fn mk_summary_if_neccessary(
@@ -488,7 +488,7 @@ impl GameData {
 
            The output should have the following structure:
            --- START EXAMPLE ---
-           *The image description* will be passed to Flux2 to generate an image.
+           *The image description* will be passed to an image model to generate an image.
            Unless the most important part of the current turn is a special place, scenery or
            object, the image should show a character that is currently important.
            <<<EOID>>>
@@ -537,7 +537,7 @@ impl GameData {
            {summary} 
            --- END SUMMARY ---
 
-           Make sure you respect the output-length limitation of at most 1500 words.
+           Make sure you respect the output-length limitation of at most 1000 words.
         "#};
 
         let messages = (0..self.turn_data.len())
@@ -709,6 +709,7 @@ impl TurnInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldDescription {
+    pub name: String,
     pub main_description: String,
     pub pc_descriptions: BTreeMap<String, String>,
     pub init_action: String,

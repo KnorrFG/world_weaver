@@ -11,6 +11,14 @@ pub use playing::Playing;
 pub mod modal;
 pub use modal::{Dialog, Modal};
 
+pub mod world_menu;
+pub use world_menu::WorldMenu;
+
+pub mod world_editor;
+pub use world_editor::WorldEditor;
+
+pub mod start_new_game;
+
 use crate::{
     context::Context,
     message::{Message, UiMessage},

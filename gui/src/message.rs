@@ -28,14 +28,16 @@ pub enum UiMessage {
     ConfirmDialog(ui_messages::ConfirmDialog),
     EditDialog(ui_messages::EditDialog),
     MainMenu(ui_messages::MainMenu),
+    WorldMenu(ui_messages::WorldMenu),
+    WorldEditor(ui_messages::WorldEditor),
+    InputDialog(ui_messages::InputDialog),
+    StartNewGame(ui_messages::StartNewGame),
 }
 
 pub mod ui_messages {
     use super::*;
-    
-    use iced::widget::text_editor;
 
-    
+    use iced::widget::text_editor;
 
     macro_rules! ui_enums {
         ($($pub:vis enum $name:ident { $( $variant:ident $( ( $($body:tt)* ) )? ),+ $(,)? })+) => {
@@ -71,6 +73,8 @@ pub mod ui_messages {
             UpdateHiddenInfo(String),
             ShowImageDescription,
             CopyInputToClipboard,
+            RegenerateButtonPressed,
+            RegenerateMessage(String),
         }
 
         pub enum MessageDialog {
@@ -89,13 +93,39 @@ pub mod ui_messages {
             Update(text_editor::Action),
         }
 
+        pub enum InputDialog {
+            Save,
+            Cancel,
+            Edit(String),
+        }
+
         pub enum MainMenu {
-            NewGame,
             Continue,
             WorldsMenu,
             Options,
             Save,
             Load,
+        }
+
+        pub enum WorldMenu {
+            NewWorld,
+            StartWorld(usize)
+        }
+
+        pub enum WorldEditor {
+            AddCharacterButton,
+            AddCharacter(String),
+            UpdateCharacter(String, text_editor::Action),
+            DescriptionUpdate(text_editor::Action),
+            InitActionUpdate(text_editor::Action),
+            NameUpdate(String),
+            Save,
+            SaveAndPlay,
+            Abort,
+        }
+
+        pub enum StartNewGame {
+            Selected(String)
         }
     }
 }

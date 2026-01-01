@@ -243,6 +243,7 @@ mod tests {
             main_description: "A fantasy world with dragons".to_string(),
             pc_descriptions,
             init_action: "Look around".to_string(),
+            name: "World name".into(),
         };
 
         let mut summaries = vec![];

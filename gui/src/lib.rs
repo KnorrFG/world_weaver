@@ -8,10 +8,12 @@ use color_eyre::{
     Result,
     eyre::{WrapErr as _, eyre},
 };
-use engine::{game::Game, image_model, save_archive::SaveArchive};
+use engine::{ImgModBox, LLMBox, game::Game, image_model, llm::Claude, save_archive::SaveArchive};
 use iced::{
-    Element, Font, Task, Theme,
+    Element, Font, Length, Task, Theme,
     font::{self},
+    padding,
+    widget::{container, scrollable, text},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -28,10 +30,14 @@ pub struct Gui {
 }
 
 impl Gui {
-    pub fn new(game: Game, save: SaveArchive) -> Self {
+    pub fn new() -> Self {
+        let cfg = load_persisted_state()
+            .unwrap()
+            .ok_or(eyre!("no config"))
+            .unwrap();
         Gui {
-            state: Box::new(state::Playing::new()),
-            ctx: context::Context::new(game, save),
+            state: Box::new(state::MainMenu::new().expect("Couldn't start Game")),
+            ctx: context::Context::from_config(cfg),
         }
     }
 
@@ -88,14 +94,29 @@ impl From<color_eyre::Report> for StringError {
 impl std::error::Error for StringError {}
 
 pub const CLAUDE_MODEL: &str = "claude-sonnet-4-5";
-pub const DEFAULT_SAVE_NAME: &str = "default_save";
+pub const DEFAULT_SAVE_NAME: &str = "active_game";
 pub const PERSISTENT_INFO_NAME: &str = "persisted_info";
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct PersistedState {
-    pub claude_token: Option<String>,
-    pub current_img_model: Option<image_model::Model>,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Config {
+    pub claude_token: String,
+    pub current_img_model: image_model::Model,
     pub img_model_tokens: HashMap<image_model::ModelProvider, String>,
+}
+
+impl Config {
+    pub fn get_llm(&self) -> LLMBox {
+        Box::new(Claude::new(self.claude_token.clone(), CLAUDE_MODEL.into()))
+    }
+
+    pub fn get_image_model(&self) -> Result<ImgModBox> {
+        let model = self.current_img_model;
+        let key = self
+            .img_model_tokens
+            .get(&model.provider())
+            .ok_or(eyre!("No token for {model}"))?;
+        Ok(model.make(key.clone()))
+    }
 }
 
 pub fn load_json_file<T: DeserializeOwned>(world: &Path) -> Result<T> {
@@ -112,15 +133,20 @@ pub fn data_dir() -> Result<PathBuf> {
         .ok_or(eyre!("Couldn't find data dir"))?
         .join(APP_NAME))
 }
+
+pub fn worlds_dir() -> Result<PathBuf> {
+    Ok(data_dir()?.join("worlds"))
+}
+
 pub fn persistent_state_path() -> Result<PathBuf> {
     Ok(data_dir()?.join(PERSISTENT_INFO_NAME))
 }
 
-pub fn default_save_path() -> Result<PathBuf> {
+pub fn active_game_save_path() -> Result<PathBuf> {
     Ok(data_dir()?.join(DEFAULT_SAVE_NAME))
 }
 
-pub fn load_persisted_state() -> Result<Option<PersistedState>> {
+pub fn load_persisted_state() -> Result<Option<Config>> {
     let path = persistent_state_path()?;
     if !path.exists() {
         Ok(None)
@@ -129,7 +155,7 @@ pub fn load_persisted_state() -> Result<Option<PersistedState>> {
     }
 }
 
-pub fn save_persisted_state(ps: &PersistedState) -> Result<()> {
+pub fn save_persisted_state(ps: &Config) -> Result<()> {
     let path = persistent_state_path()?;
     save_json_file(&path, ps)?;
     Ok(())
@@ -168,7 +194,7 @@ fn italic_default_font() -> Font {
     }
 }
 
-fn bold_text(t: &str) -> iced::widget::Text<'_> {
+fn bold_text<'a>(t: impl text::IntoFragment<'a>) -> iced::widget::Text<'a> {
     iced::widget::text(t).font(bold_default_font())
 }
 
@@ -177,6 +203,19 @@ fn bold_default_font() -> Font {
         weight: font::Weight::Bold,
         ..Font::DEFAULT
     }
+}
+
+fn top_level_container<'a, T: Send + 'static>(
+    elem: impl Into<Element<'a, T>>,
+) -> container::Container<'a, T> {
+    container(
+        container(scrollable(
+            container(elem).padding(padding::all(10).right(20)),
+        ))
+        .padding(20)
+        .max_width(800),
+    )
+    .center(Length::Fill)
 }
 
 pub trait TryIntoExt<T> {

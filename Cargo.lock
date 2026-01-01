@@ -5933,6 +5933,7 @@ dependencies = [
  "dirs",
  "engine",
  "iced",
+ "indoc",
  "log",
  "nonempty",
  "pretty_env_logger",

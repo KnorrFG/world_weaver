@@ -8,16 +8,19 @@ use iced::{
 
 use crate::{
     State,
-    message::UiMessage,
     context::Context,
+    message::UiMessage,
     state::{
         StateCommand, cmd,
-        modal::{confirm::ConfirmDialog, edit::EditorModal, message::MessageDialog},
+        modal::{
+            confirm::ConfirmDialog, edit::EditorModal, input::InputDialog, message::MessageDialog,
+        },
     },
 };
 
 pub mod confirm;
 pub mod edit;
+pub mod input;
 pub mod message;
 
 pub trait Dialog: fmt::Debug {
@@ -56,6 +59,21 @@ impl Modal<ConfirmDialog> {
         no_msg: Option<UiMessage>,
     ) -> Self {
         Self::new(parent, ConfirmDialog::new(message, yes_msg, no_msg))
+    }
+}
+
+/// Constructs a Modal wrapping an InputDialog
+impl<F> Modal<InputDialog<F>>
+where
+    F: Fn(String) -> Task<UiMessage> + Clone + Send + Sync + 'static,
+{
+    pub fn input(
+        parent: Box<dyn State>,
+        title: impl Into<String>,
+        placeholder: impl Into<String>,
+        ok_msg: F,
+    ) -> Self {
+        Self::new(parent, InputDialog::new(title, placeholder, ok_msg))
     }
 }
 
