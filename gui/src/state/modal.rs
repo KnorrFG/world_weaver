@@ -2,8 +2,8 @@ use std::fmt;
 
 use color_eyre::Result;
 use iced::{
-    Color, Element, Length, Task,
-    widget::{container, space, stack},
+    Border, Color, Element, Length, Task,
+    widget::{Container, container, scrollable, space, stack},
 };
 
 use crate::{
@@ -129,4 +129,13 @@ fn dim_layer() -> Element<'static, UiMessage> {
         .height(Length::Fill)
         .style(|_| container::Style::default().background(Color::from_rgba(0., 0., 0., 0.1)))
         .into()
+}
+
+fn modal_outer_container<'a>(child: impl Into<Element<'a, UiMessage>>) -> Container<'a, UiMessage> {
+    container(scrollable(child))
+        .height(Length::Shrink)
+        .padding(20)
+        .max_width(700)
+        .max_height(700)
+        .style(|_theme| container::background(Color::WHITE).border(Border::default().rounded(10)))
 }

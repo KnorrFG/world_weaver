@@ -1,9 +1,6 @@
 use std::fs;
 
-use color_eyre::{
-    Result,
-    eyre::ensure,
-};
+use color_eyre::{Result, eyre::ensure};
 use engine::{game::Game, save_archive::SaveArchive};
 use iced::{
     Length, Task,
@@ -27,7 +24,7 @@ pub struct MainMenu {
 }
 
 impl MainMenu {
-    pub fn new() -> Result<Self> {
+    pub fn try_new() -> Result<Self> {
         Ok(MainMenu {
             active_game_exists: active_game_save_path()?.exists(),
         })

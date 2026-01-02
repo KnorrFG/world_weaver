@@ -36,7 +36,7 @@ impl Gui {
             .ok_or(eyre!("no config"))
             .unwrap();
         Gui {
-            state: Box::new(state::MainMenu::new().expect("Couldn't start Game")),
+            state: Box::new(state::MainMenu::try_new().expect("Couldn't start Game")),
             ctx: context::Context::from_config(cfg),
         }
     }

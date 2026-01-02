@@ -76,6 +76,7 @@ pub mod ui_messages {
             CopyInputToClipboard,
             RegenerateButtonPressed,
             RegenerateMessage(String),
+            ToMainMenu,
         }
 
         pub enum MessageDialog {

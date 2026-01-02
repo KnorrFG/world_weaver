@@ -1,10 +1,13 @@
 use crate::{
     TryIntoExt,
-    message::{UiMessage, ui_messages::EditDialog as MyMessage},
     context::Context,
-    state::{Dialog, modal::DialogResult},
+    message::{UiMessage, ui_messages::EditDialog as MyMessage},
+    state::{
+        Dialog,
+        modal::{DialogResult, modal_outer_container},
+    },
 };
-use color_eyre::Result;
+use color_eyre::{Result, owo_colors::OwoColorize};
 use iced::{
     Element, Length, Task,
     widget::{button, column, container, row, scrollable, space, text, text_editor},
@@ -65,7 +68,7 @@ where
 
         let content = column![
             text(&self.title).size(20),
-            scrollable(editor).height(Length::Fill),
+            editor,
             row![
                 space::horizontal(),
                 button("Cancel").on_press(MyMessage::Cancel.into()),
@@ -76,13 +79,6 @@ where
         .spacing(10)
         .padding(20);
 
-        container(
-            container(content)
-                .style(container::rounded_box)
-                .max_width(700)
-                .max_height(700),
-        )
-        .center(Length::Fill)
-        .into()
+        modal_outer_container(content).into()
     }
 }

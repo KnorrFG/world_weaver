@@ -97,7 +97,7 @@ impl super::State for LoadMenu {
                 ctx.game = Some(game_ctx);
                 cmd::transition(Playing::new())
             }
-            Back => cmd::transition(MainMenu::new()?),
+            Back => cmd::transition(MainMenu::try_new()?),
         }
     }
 

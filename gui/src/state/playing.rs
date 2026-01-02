@@ -8,7 +8,7 @@ use iced::{
     alignment::{Horizontal, Vertical},
     padding,
     widget::{
-        self, Button, Column, button, container, markdown, row, scrollable, space,
+        self, Button, Column, Container, button, container, markdown, row, scrollable, space,
         text_editor::{self, Edit},
         text_input,
     },
@@ -19,7 +19,7 @@ use crate::{
     context::game_context::{Complete, GameContext as Context, InThePast, SubState},
     elem_list, italic_text,
     message::{Message, UiMessage, ui_messages::Playing as MyMessage},
-    state::{Modal, StateCommand, cmd, modal::confirm::ConfirmDialog},
+    state::{MainMenu, Modal, StateCommand, cmd, modal::confirm::ConfirmDialog},
 };
 
 #[derive(Debug, Clone)]
@@ -181,6 +181,7 @@ impl State for Playing {
                 self.reset_action_editors();
                 cmd::task(ctx.regenerate_turn(s)?)
             }
+            ToMainMenu => cmd::transition(MainMenu::try_new()?),
         }
     }
 
@@ -300,7 +301,7 @@ impl State for Playing {
         .spacing(20);
 
         let main_col = widget::column![
-            widget::text!("{} - Turn {}", ctx.game.world_name(), ctx.current_turn()).size(32),
+            mk_header(ctx),
             widget::rule::horizontal(2),
             container(text_row).center_x(Length::Fill).padding(20)
         ]
@@ -320,6 +321,22 @@ impl State for Playing {
     }
 }
 
+fn mk_header<'a>(ctx: &'a Context) -> Container<'a, UiMessage> {
+    container(
+        widget::row![
+            widget::row![
+                button("☰").on_press(MyMessage::ToMainMenu.into()),
+                widget::space::horizontal()
+            ]
+            .align_y(Vertical::Center)
+            .width(Length::FillPortion(1)),
+            widget::text!("{} - Turn {}", ctx.game.world_name(), ctx.current_turn()).size(32),
+            widget::Space::new().width(Length::FillPortion(1))
+        ]
+        .align_y(Vertical::Center),
+    )
+    .padding(10)
+}
 fn proposed_action_button<'a>(text: &'a str) -> Button<'a, UiMessage> {
     button(text).on_press(MyMessage::ProposedActionButtonPressed(text.into()).into())
 }

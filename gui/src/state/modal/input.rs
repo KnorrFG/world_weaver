@@ -2,7 +2,10 @@ use crate::{
     TryIntoExt,
     context::Context,
     message::{UiMessage, ui_messages::InputDialog as MyMessage},
-    state::{Dialog, modal::DialogResult},
+    state::{
+        Dialog,
+        modal::{DialogResult, modal_outer_container},
+    },
 };
 use color_eyre::Result;
 use iced::{
@@ -78,15 +81,6 @@ where
         .spacing(10)
         .padding(20);
 
-        container(
-            container(content)
-                .style(|_theme| {
-                    container::background(Color::WHITE).border(Border::default().rounded(10))
-                })
-                .max_width(700)
-                .max_height(700),
-        )
-        .center(Length::Fill)
-        .into()
+        modal_outer_container(content).into()
     }
 }
