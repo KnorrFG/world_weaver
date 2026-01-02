@@ -15,21 +15,24 @@ use super::Image;
 
 #[derive(Clone)]
 pub struct ReplicateImageModel {
+    url: String,
     model: Model,
     client: Client,
     api_key: String,
-    version: String,
+    version: Option<String>,
     input_builder: Arc<dyn Fn(&str) -> serde_json::Value + Send + Sync>,
 }
 
 impl ReplicateImageModel {
     pub fn new(
+        url: String,
         model: Model,
         api_key: String,
-        version: String,
+        version: Option<String>,
         input_builder: impl Fn(&str) -> serde_json::Value + Send + Sync + 'static,
     ) -> Self {
         Self {
+            url,
             model,
             client: Client::new(),
             api_key,
@@ -42,7 +45,7 @@ impl ReplicateImageModel {
 #[derive(Debug, Deserialize)]
 struct PredictionResponse {
     status: String,
-    output: Option<Vec<String>>,
+    output: Option<serde_json::Value>,
 }
 
 impl ImageModel for ReplicateImageModel {
@@ -52,14 +55,21 @@ impl ImageModel for ReplicateImageModel {
     ) -> Pin<Box<dyn Future<Output = Result<Image>> + Send + 'a>> {
         Box::pin(async move {
             // 1. Create prediction
+            let req_body = if let Some(v) = &self.version {
+                json!({
+                    "version": v,
+                    "input": (self.input_builder)(description),
+                })
+            } else {
+                json!({
+                    "input": (self.input_builder)(description),
+                })
+            };
             let create_resp = self
                 .client
-                .post("https://api.replicate.com/v1/predictions")
+                .post(&self.url)
                 .bearer_auth(&self.api_key)
-                .json(&json!({
-                    "version": self.version,
-                    "input": (self.input_builder)(description),
-                }))
+                .json(&req_body)
                 .send()
                 .await?;
 
@@ -91,11 +101,9 @@ impl ImageModel for ReplicateImageModel {
 
                 match resp.status.as_str() {
                     "succeeded" => {
-                        let url = resp
-                            .output
-                            .and_then(|o| o.into_iter().next())
-                            .ok_or_else(|| eyre!("No output image"))?;
-
+                        let url = extract_image_url(
+                            resp.output.as_ref().ok_or(eyre!("No output image"))?,
+                        )?;
                         // 3. Download image
                         let bytes = self
                             .client
@@ -128,5 +136,19 @@ impl ImageModel for ReplicateImageModel {
 
     fn model(&self) -> Model {
         self.model
+    }
+}
+
+fn extract_image_url(output: &serde_json::Value) -> Result<&str> {
+    match output {
+        serde_json::Value::String(url) => Ok(url),
+
+        serde_json::Value::Array(arr) => Ok(arr
+            .get(0)
+            .ok_or_else(|| eyre!("Empty output array"))?
+            .as_str()
+            .ok_or(eyre!("unexpected json"))?),
+
+        other => Err(eyre!("Unsupported output format: {other:#?}")),
     }
 }

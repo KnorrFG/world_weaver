@@ -63,7 +63,7 @@ impl Gui {
         match self.try_update(message) {
             Ok(task) => task,
             Err(e) => {
-                self.state = Modal::message(self.state.clone(), "Error", format!("{e:#?}")).boxed();
+                self.state = Modal::message(self.state.clone(), "Error", e.to_string()).boxed();
                 Task::none()
             }
         }

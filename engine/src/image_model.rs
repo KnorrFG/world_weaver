@@ -30,6 +30,8 @@ pub enum Model {
     Flux1,
     #[default]
     Flux2,
+    #[strum(to_string = "Flux2")]
+    Flux2Replicate,
 }
 
 #[derive(
@@ -55,9 +57,10 @@ impl Model {
     pub fn make(&self, key: String) -> ImgModBox {
         match self {
             Model::Flux1 => Box::new(replicate::ReplicateImageModel::new(
+                "https://api.replicate.com/v1/predictions".into(),
                 *self,
                 key,
-                "8cf067a09fbd627c5597781951e1a6988e3b69f6ef712b4948d3d2b5361569ad".into(),
+                Some("8cf067a09fbd627c5597781951e1a6988e3b69f6ef712b4948d3d2b5361569ad".into()),
                 |prompt| {
                     json!({
                         "prompt": prompt,
@@ -70,6 +73,26 @@ impl Model {
                 },
             )),
             Model::Flux2 => Box::new(Flux2::new(key)),
+            Model::Flux2Replicate => Box::new(replicate::ReplicateImageModel::new(
+                "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions"
+                    .into(),
+                *self,
+                key,
+                None,
+                |prompt| {
+                    json!({
+                        "width": 832,
+                        "height": 1216,
+                        "prompt": prompt,
+                        "resolution": "1 MP",
+                        "aspect_ratio": "9:16",
+                        "input_images": [],
+                        "output_format": "jpg",
+                        "output_quality": 80,
+                        "safety_tolerance": 5
+                    })
+                },
+            )),
         }
     }
 
@@ -87,12 +110,20 @@ impl Model {
                    do it in a non-erotic way.
                 "
             }
+            Model::Flux2Replicate => {
+                r"
+                   The model is Flux2. Make sure to formulate the image description in a way that avoids
+                   image moderation because of sexual content. When you describe anatomy,
+                   do it in a non-erotic way.
+                "
+            }
         }
     }
 
     pub fn provider(&self) -> ModelProvider {
         match self {
             Model::Flux1 => ModelProvider::Replicate,
+            Model::Flux2Replicate => ModelProvider::Replicate,
             Model::Flux2 => ModelProvider::BFL,
         }
     }

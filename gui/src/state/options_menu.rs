@@ -44,6 +44,9 @@ impl State for OptionsMenu {
 
             Ok => {
                 save_config(&ctx.config)?;
+                if let Some(gctx) = &mut ctx.game {
+                    gctx.game.imgmod = ctx.config.get_image_model()?;
+                }
                 cmd::transition(MainMenu::try_new()?)
             }
         }
