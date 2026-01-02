@@ -17,6 +17,8 @@ pub use world_menu::WorldMenu;
 pub mod world_editor;
 pub use world_editor::WorldEditor;
 
+pub mod load_menu;
+
 pub mod start_new_game;
 
 use crate::{

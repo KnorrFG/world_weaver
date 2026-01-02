@@ -1,8 +1,6 @@
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::Result;
 use engine::{
     game::{Game, WorldDescription},
-    image_model,
-    llm::Claude,
     save_archive::SaveArchive,
 };
 use iced::{
@@ -11,7 +9,7 @@ use iced::{
 };
 
 use crate::{
-    CLAUDE_MODEL, Config, TryIntoExt, active_game_save_path, bold_default_font, bold_text,
+    Config, TryIntoExt, active_game_save_path, bold_default_font,
     context::{Context, game_context::GameContext},
     elem_list,
     message::{ContextMessage, Message, UiMessage, ui_messages::StartNewGame as MyMessage},

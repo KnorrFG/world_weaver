@@ -1,10 +1,10 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::{
-    ElemHelper, TryIntoExt, bold_text,
+    TryIntoExt, bold_text,
     context::Context,
     elem_list,
-    message::{self, UiMessage, ui_messages::WorldEditor as MyMessage},
+    message::{UiMessage, ui_messages::WorldEditor as MyMessage},
     save_json_file,
     state::{Modal, StateExt, WorldMenu, cmd, start_new_game::StartNewGame},
     top_level_container, worlds_dir,
@@ -16,9 +16,9 @@ use color_eyre::{
 };
 use engine::game::WorldDescription;
 use iced::{
-    Font, Length, Task, padding,
+    Font, Length, Task,
     widget::{
-        Space, button, column, container, row, rule, scrollable, space, text, text_editor,
+        Space, button, column, container, row, rule, space, text, text_editor,
         text_input,
     },
 };

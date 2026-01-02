@@ -32,6 +32,7 @@ pub enum UiMessage {
     WorldEditor(ui_messages::WorldEditor),
     InputDialog(ui_messages::InputDialog),
     StartNewGame(ui_messages::StartNewGame),
+    LoadMenu(ui_messages::LoadMenu),
 }
 
 pub mod ui_messages {
@@ -103,7 +104,8 @@ pub mod ui_messages {
             Continue,
             WorldsMenu,
             Options,
-            Save,
+            SaveButton,
+            Save(String),
             Load,
         }
 
@@ -126,6 +128,11 @@ pub mod ui_messages {
 
         pub enum StartNewGame {
             Selected(String)
+        }
+
+        pub enum LoadMenu {
+            Back,
+            LoadSave(usize),
         }
     }
 }

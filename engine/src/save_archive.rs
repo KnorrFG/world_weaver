@@ -212,6 +212,20 @@ impl SaveArchive {
         // this will also write the updated header
         self.write_game_data(&gd)
     }
+
+    /// writes the current archive to another file.
+    pub fn write_to(&mut self, path: &Path) -> Result<()> {
+        self.file.seek(SeekFrom::Start(0))?;
+
+        let mut dst = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)?;
+
+        std::io::copy(&mut self.file, &mut dst)?;
+        Ok(())
+    }
 }
 
 fn read_header(file: &mut File) -> Result<SaveHeader> {
@@ -421,6 +435,42 @@ mod tests {
             err.to_string().contains("Image ID not found"),
             "expected missing image error, got: {err}"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn write_to_copies_entire_archive() -> Result<()> {
+        use tempfile::NamedTempFile;
+
+        let src_file = NamedTempFile::new()?;
+        let dst_file = NamedTempFile::new()?;
+
+        // Create and populate source archive
+        {
+            let mut archive = SaveArchive::create(src_file.path())?;
+            let game_data = make_sample_game_data(10);
+            archive.write_game_data(&game_data)?;
+
+            for i in 0..10 {
+                archive.append_image(&vec![i as u8; 8])?;
+            }
+
+            // Copy archive
+            archive.write_to(&dst_file.path().to_path_buf())?;
+        }
+
+        // Open copied archive and validate contents
+        let mut copied = SaveArchive::open(dst_file.path())?;
+
+        let gd = copied.read_game_data()?;
+        assert_eq!(gd.turn_data.len(), 10);
+        assert_eq!(gd.pc, "Alice");
+
+        for i in 0..10 {
+            let img = copied.read_image(i)?;
+            assert_eq!(img, vec![i as u8; 8]);
+        }
 
         Ok(())
     }

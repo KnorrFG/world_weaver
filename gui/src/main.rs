@@ -1,23 +1,7 @@
-use std::fs;
 
-use clap::Parser;
-use color_eyre::{
-    Result,
-    eyre::{ensure, eyre},
-};
-use engine::{
-    game::Game,
-    image_model::{self},
-    llm::Claude,
-    save_archive::SaveArchive,
-};
-use log::debug;
+use color_eyre::Result;
 
-use world_weaver::{
-    CLAUDE_MODEL, Config, Gui, active_game_save_path,
-    cli::{self, Cli},
-    load_json_file,
-};
+use world_weaver::Gui;
 
 pub fn main() -> Result<()> {
     pretty_env_logger::init();

@@ -4,7 +4,7 @@ use color_eyre::Result;
 use engine::game::WorldDescription;
 use iced::{
     Length,
-    widget::{Space, button, column, container, row, space, text},
+    widget::{Space, button, column, row, space, text},
 };
 use log::debug;
 

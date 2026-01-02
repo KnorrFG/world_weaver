@@ -7,7 +7,7 @@ use crate::{
 use color_eyre::Result;
 use iced::{
     Border, Color, Element, Length, Task,
-    widget::{button, column, container, row, scrollable, space, text, text_editor, text_input},
+    widget::{button, column, container, row, space, text, text_input},
 };
 
 /// A generic editor modal that produces a Task<Message> when saved

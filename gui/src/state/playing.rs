@@ -252,8 +252,7 @@ impl State for Playing {
                     ),
                     row![
                         space::horizontal(),
-                        button("regenerate turn")
-                            .on_press(MyMessage::RegenerateButtonPressed.into()),
+                        button("change turn").on_press(MyMessage::RegenerateButtonPressed.into()),
                         space::horizontal(),
                     ]
                 ]);

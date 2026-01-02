@@ -8,7 +8,7 @@ use color_eyre::{
     Result,
     eyre::{WrapErr as _, eyre},
 };
-use engine::{ImgModBox, LLMBox, game::Game, image_model, llm::Claude, save_archive::SaveArchive};
+use engine::{ImgModBox, LLMBox, image_model, llm::Claude};
 use iced::{
     Element, Font, Length, Task, Theme,
     font::{self},
@@ -45,7 +45,7 @@ impl Gui {
         match self.try_update(message) {
             Ok(task) => task,
             Err(e) => {
-                self.state = Modal::message(self.state.clone(), "Error", e.to_string()).boxed();
+                self.state = Modal::message(self.state.clone(), "Error", format!("{e:#?}")).boxed();
                 Task::none()
             }
         }
@@ -132,6 +132,10 @@ pub fn data_dir() -> Result<PathBuf> {
     Ok(dirs::data_dir()
         .ok_or(eyre!("Couldn't find data dir"))?
         .join(APP_NAME))
+}
+
+pub fn saves_dir() -> Result<PathBuf> {
+    Ok(data_dir()?.join("saves"))
 }
 
 pub fn worlds_dir() -> Result<PathBuf> {

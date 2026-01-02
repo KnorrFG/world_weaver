@@ -3,7 +3,6 @@ use std::mem;
 use color_eyre::{
     Result,
     eyre::{bail, eyre},
-    owo_colors::OwoColorize,
 };
 use derive_more::{From, TryInto};
 use iced::{Task, advanced::image::Handle as ImgHandle, widget::markdown};
@@ -407,7 +406,7 @@ impl GameContext {
         })
     }
 
-    pub(crate) fn regenerate_turn(&mut self, s: String) -> Result<Task<Message>> {
+    pub fn regenerate_turn(&mut self, s: String) -> Result<Task<Message>> {
         let last_turn = self.sub_state.turn_data()?;
         let last_output = last_turn.output.text.clone();
         let last_input = last_turn.input.player_action.clone();
