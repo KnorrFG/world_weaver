@@ -10,15 +10,10 @@ other:
 
 Missing features:
 
-- world editor
 - editing world ingame
 - image styles
 - exporting world from save
-- save/load
-- starting a new game without cli
-- configure tokens without cli
 - display of costs
-- regenerate turn
 
 Layout things to fix:
 

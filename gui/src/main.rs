@@ -1,13 +1,9 @@
-
 use color_eyre::Result;
-
-use world_weaver::Gui;
+use world_weaver::{Gui, load_config};
 
 pub fn main() -> Result<()> {
     pretty_env_logger::init();
-
-    iced::application(Gui::new, Gui::update, Gui::view)
-        // .theme(Gui::theme)
-        .run()?;
+    let cfg = load_config()?;
+    iced::application(move || Gui::new(cfg.clone()), Gui::update, Gui::view).run()?;
     Ok(())
 }

@@ -7,7 +7,7 @@ use crate::{
 
 use color_eyre::Result;
 use iced::{
-    Border, Color, Element, Length, Task, padding,
+    Element, Length, Task, padding,
     widget::{button, column, container, scrollable, text_editor, text_editor::Action},
 };
 

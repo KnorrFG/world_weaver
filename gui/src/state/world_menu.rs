@@ -48,7 +48,7 @@ impl super::State for WorldMenu {
     fn update(
         &mut self,
         event: crate::message::UiMessage,
-        ctx: &mut crate::context::Context,
+        _ctx: &mut crate::context::Context,
     ) -> color_eyre::eyre::Result<super::StateCommand> {
         let msg: MyMessage = event.try_into_ex()?;
         use MyMessage::*;
@@ -60,7 +60,7 @@ impl super::State for WorldMenu {
 
     fn view<'a>(
         &'a self,
-        ctx: &'a crate::context::Context,
+        _ctx: &'a crate::context::Context,
     ) -> iced::Element<'a, crate::message::UiMessage> {
         let mut tlc = Vec::from(elem_list![
             bold_text("Worlds").width(Length::Fill).center(),

@@ -56,7 +56,7 @@ impl State for StartNewGame {
         }
     }
 
-    fn view<'a>(&'a self, ctx: &'a Context) -> iced::Element<'a, UiMessage> {
+    fn view<'a>(&'a self, _ctx: &'a Context) -> iced::Element<'a, UiMessage> {
         let mut tlc = Vec::from(elem_list![
             text!("New Game - {}", self.world.name)
                 .font(bold_default_font())

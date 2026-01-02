@@ -5939,6 +5939,7 @@ dependencies = [
  "pretty_env_logger",
  "serde",
  "serde_json",
+ "strum",
 ]
 
 [[package]]

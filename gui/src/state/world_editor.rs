@@ -17,10 +17,7 @@ use color_eyre::{
 use engine::game::WorldDescription;
 use iced::{
     Font, Length, Task,
-    widget::{
-        Space, button, column, container, row, rule, space, text, text_editor,
-        text_input,
-    },
+    widget::{Space, button, column, container, row, rule, space, text, text_editor, text_input},
 };
 
 use super::State;
@@ -65,7 +62,7 @@ impl State for WorldEditor {
     fn update(
         &mut self,
         event: UiMessage,
-        ctx: &mut Context,
+        _ctx: &mut Context,
     ) -> color_eyre::eyre::Result<super::StateCommand> {
         use MyMessage::*;
         match event.try_into_ex()? {
@@ -115,7 +112,7 @@ impl State for WorldEditor {
         }
     }
 
-    fn view<'a>(&'a self, ctx: &'a Context) -> iced::Element<'a, UiMessage> {
+    fn view<'a>(&'a self, _ctx: &'a Context) -> iced::Element<'a, UiMessage> {
         let mut tlc = Vec::from(elem_list![
             bold_text("New World").size(24).width(Length::Fill).center(),
             text_input("World name", &self.name).on_input(|n| MyMessage::NameUpdate(n).into()),

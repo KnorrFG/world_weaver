@@ -33,11 +33,13 @@ pub enum UiMessage {
     InputDialog(ui_messages::InputDialog),
     StartNewGame(ui_messages::StartNewGame),
     LoadMenu(ui_messages::LoadMenu),
+    OptionsMenu(ui_messages::OptionsMenu),
 }
 
 pub mod ui_messages {
     use super::*;
 
+    use engine::image_model;
     use iced::widget::text_editor;
 
     macro_rules! ui_enums {
@@ -134,6 +136,13 @@ pub mod ui_messages {
         pub enum LoadMenu {
             Back,
             LoadSave(usize),
+        }
+
+        pub enum OptionsMenu {
+            ClaudeTokenChanged(String),
+            ImgModelTokenChanged(image_model::ModelProvider, String),
+            SelectImageModel(image_model::Model),
+            Ok,
         }
     }
 }

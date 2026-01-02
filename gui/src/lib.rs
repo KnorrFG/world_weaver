@@ -17,6 +17,11 @@ use iced::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+use crate::{
+    message::Message,
+    state::{Modal, State, StateExt, options_menu::OptionsMenu},
+};
+
 pub mod cli;
 pub mod context;
 pub mod message;
@@ -30,14 +35,27 @@ pub struct Gui {
 }
 
 impl Gui {
-    pub fn new() -> Self {
-        let cfg = load_persisted_state()
-            .unwrap()
-            .ok_or(eyre!("no config"))
-            .unwrap();
-        Gui {
-            state: Box::new(state::MainMenu::try_new().expect("Couldn't start Game")),
-            ctx: context::Context::from_config(cfg),
+    pub fn new(mb_config: Option<Config>) -> Self {
+        if let Some(cfg) = mb_config {
+            Gui {
+                state: Box::new(state::MainMenu::try_new().expect("Couldn't start Game")),
+                ctx: context::Context::from_config(cfg),
+            }
+        } else {
+            Gui {
+                state: Modal::message(
+                    OptionsMenu.boxed(),
+                    "Welcome",
+                    indoc::indoc! {"
+                    Hi, since this is your first time starting World Weaver, please configure the
+                    required API-keys. You only need keys for the Providers you actually use, so at
+                    minimum, you will need two API-keys: one for Anthropic and one for the Image model provider
+                    of your choice.
+                    "
+                    },
+                ).boxed(),
+                ctx: context::Context::from_config(Config::default()),
+            }
         }
     }
 
@@ -94,10 +112,9 @@ impl From<color_eyre::Report> for StringError {
 impl std::error::Error for StringError {}
 
 pub const CLAUDE_MODEL: &str = "claude-sonnet-4-5";
-pub const DEFAULT_SAVE_NAME: &str = "active_game";
 pub const PERSISTENT_INFO_NAME: &str = "persisted_info";
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Config {
     pub claude_token: String,
     pub current_img_model: image_model::Model,
@@ -142,16 +159,18 @@ pub fn worlds_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("worlds"))
 }
 
-pub fn persistent_state_path() -> Result<PathBuf> {
-    Ok(data_dir()?.join(PERSISTENT_INFO_NAME))
+pub fn config_path() -> Result<PathBuf> {
+    Ok(dirs::config_local_dir()
+        .ok_or(eyre!("Couldn't get config dir"))?
+        .join("world_weaver.json"))
 }
 
 pub fn active_game_save_path() -> Result<PathBuf> {
-    Ok(data_dir()?.join(DEFAULT_SAVE_NAME))
+    Ok(data_dir()?.join("active_game"))
 }
 
-pub fn load_persisted_state() -> Result<Option<Config>> {
-    let path = persistent_state_path()?;
+pub fn load_config() -> Result<Option<Config>> {
+    let path = config_path()?;
     if !path.exists() {
         Ok(None)
     } else {
@@ -159,8 +178,8 @@ pub fn load_persisted_state() -> Result<Option<Config>> {
     }
 }
 
-pub fn save_persisted_state(ps: &Config) -> Result<()> {
-    let path = persistent_state_path()?;
+pub fn save_config(ps: &Config) -> Result<()> {
+    let path = config_path()?;
     save_json_file(&path, ps)?;
     Ok(())
 }
@@ -171,11 +190,6 @@ macro_rules! elem_list {
     };
 }
 pub(crate) use elem_list;
-
-use crate::{
-    message::Message,
-    state::{Modal, State, StateExt},
-};
 
 pub trait ElemHelper<'a, T> {
     fn into_elem(self) -> Element<'a, T>;

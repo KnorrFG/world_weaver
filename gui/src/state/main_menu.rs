@@ -15,7 +15,9 @@ use crate::{
     elem_list,
     message::{UiMessage, ui_messages::MainMenu as MyMessage},
     saves_dir,
-    state::{self, Modal, Playing, StateCommand, cmd, load_menu::LoadMenu},
+    state::{
+        self, Modal, Playing, StateCommand, cmd, load_menu::LoadMenu, options_menu::OptionsMenu,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -81,7 +83,7 @@ impl State for MainMenu {
                 ))
             }
             Load => cmd::transition(LoadMenu::try_new()?),
-            Options => todo!(),
+            Options => cmd::transition(OptionsMenu),
         }
     }
 

@@ -3,7 +3,7 @@ use std::pin::Pin;
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use strum::Display;
+use strum::{Display, EnumIter};
 
 pub mod flux2;
 pub use flux2::Flux2;
@@ -13,17 +13,40 @@ pub mod replicate;
 use crate::ImgModBox;
 
 #[derive(
-    Debug, Clone, Copy, Display, clap::ValueEnum, Serialize, Deserialize, Hash, PartialEq, Eq,
+    Debug,
+    Clone,
+    Copy,
+    Display,
+    clap::ValueEnum,
+    Serialize,
+    Deserialize,
+    Hash,
+    PartialEq,
+    Eq,
+    EnumIter,
+    Default,
 )]
 pub enum Model {
     Flux1,
+    #[default]
     Flux2,
 }
 
 #[derive(
-    Debug, Clone, Copy, Display, clap::ValueEnum, Serialize, Deserialize, Hash, PartialEq, Eq,
+    Debug,
+    Clone,
+    Copy,
+    Display,
+    clap::ValueEnum,
+    Serialize,
+    Deserialize,
+    Hash,
+    PartialEq,
+    Eq,
+    EnumIter,
 )]
 pub enum ModelProvider {
+    #[strum(to_string = "Black Forest Labs")]
     BFL, // BlackForestLabs
     Replicate,
 }

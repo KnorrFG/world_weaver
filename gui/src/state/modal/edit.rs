@@ -7,10 +7,10 @@ use crate::{
         modal::{DialogResult, modal_outer_container},
     },
 };
-use color_eyre::{Result, owo_colors::OwoColorize};
+use color_eyre::Result;
 use iced::{
-    Element, Length, Task,
-    widget::{button, column, container, row, scrollable, space, text, text_editor},
+    Element, Task,
+    widget::{button, column, row, space, text, text_editor},
 };
 
 /// A generic editor modal that produces a Task<Message> when saved
