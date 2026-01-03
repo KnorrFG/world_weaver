@@ -50,16 +50,20 @@ where
 {
     fn update(&mut self, event: UiMessage, _ctx: &mut Context) -> Result<DialogResult> {
         use MyMessage::*;
-        match event.try_into_ex()? {
-            Update(action) => {
-                self.editor_content.perform(action);
-                Ok(DialogResult::Stay)
+        if let Ok(msg) = TryInto::<MyMessage>::try_into(event) {
+            match msg {
+                Update(action) => {
+                    self.editor_content.perform(action);
+                    Ok(DialogResult::Stay)
+                }
+                Save => {
+                    let task = (self.on_save)(self.editor_content.text());
+                    Ok(DialogResult::Close(task))
+                }
+                Cancel => Ok(DialogResult::Close(Task::none())),
             }
-            Save => {
-                let task = (self.on_save)(self.editor_content.text());
-                Ok(DialogResult::Close(task))
-            }
-            Cancel => Ok(DialogResult::Close(Task::none())),
+        } else {
+            Ok(DialogResult::Stay)
         }
     }
 

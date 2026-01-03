@@ -9,7 +9,7 @@ use iced::{Task, advanced::image::Handle as ImgHandle, widget::markdown};
 use nonempty::nonempty;
 
 use crate::{
-    StringError, TryIntoExt,
+    TryIntoExt,
     message::{ContextMessage, Message},
 };
 use engine::{
@@ -103,15 +103,9 @@ impl GameContext {
                     },
                     input,
                 ) => {
-                    let output_fut = Task::perform(round_output, |res| {
-                        OutputComplete(res.map_err(StringError::from)).into()
-                    });
-                    let image_fut = Task::perform(image, |res| {
-                        ImageReady(res.map_err(StringError::from)).into()
-                    });
-                    let stream_task = Task::run(text_stream, |res| {
-                        NewTextFragment(res.map_err(StringError::from)).into()
-                    });
+                    let output_fut = Task::perform(round_output, |res| OutputComplete(res).into());
+                    let image_fut = Task::perform(image, |res| ImageReady(res).into());
+                    let stream_task = Task::run(text_stream, |res| NewTextFragment(res).into());
                     self.sub_state = WaitingForOutput {
                         input,
                         output: None,
@@ -290,6 +284,28 @@ impl GameContext {
         Ok(())
     }
 
+    pub fn update_output(&mut self, val: String) -> Result<()> {
+        match &mut self.sub_state {
+            SubState::InThePast(InThePast {
+                data,
+                completed_turn,
+            }) => {
+                data.output.text = val.clone();
+                self.game.data.turn_data[*completed_turn].output.text = val.clone();
+            }
+            SubState::Complete(Complete { turn_data }) => {
+                turn_data.output.secret_info = val.clone();
+                self.game.data.turn_data.last_mut().unwrap().output.text = val.clone();
+            }
+            other => bail!("Invalid substate when seeing UpdateHiddenInfo: {other:#?}",),
+        }
+
+        self.output_text = val;
+        self.output_markdown = markdown::parse(&self.output_text).collect();
+        self.save.write_game_data(&self.game.data)?;
+        Ok(())
+    }
+
     fn request_summary(
         &mut self,
         input: TurnInput,
@@ -304,7 +320,7 @@ impl GameContext {
         .into();
         let fut = self.game.mk_summary_if_neccessary();
         Ok(Task::perform(fut, |res| {
-            ContextMessage::SummaryFinished(res.map_err(StringError::from)).into()
+            ContextMessage::SummaryFinished(res).into()
         }))
     }
 
@@ -327,15 +343,9 @@ impl GameContext {
         }
         .into();
         Task::batch([
-            Task::perform(round_output, |x| {
-                ContextMessage::OutputComplete(x.map_err(StringError::from)).into()
-            }),
-            Task::perform(image, |x| {
-                ContextMessage::ImageReady(x.map_err(StringError::from)).into()
-            }),
-            Task::run(text_stream, |x| {
-                ContextMessage::NewTextFragment(x.map_err(StringError::from)).into()
-            }),
+            Task::perform(round_output, |x| ContextMessage::OutputComplete(x).into()),
+            Task::perform(image, |x| ContextMessage::ImageReady(x).into()),
+            Task::run(text_stream, |x| ContextMessage::NewTextFragment(x).into()),
         ])
     }
 

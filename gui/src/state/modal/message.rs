@@ -32,14 +32,20 @@ impl super::Dialog for MessageDialog {
     fn update(&mut self, event: UiMessage, _ctx: &mut Context) -> Result<DialogResult> {
         use MyMessage::*;
 
-        match event.try_into_ex()? {
-            Confirm => Ok(DialogResult::Close(Task::none())),
-            EditAction(a) => {
-                if !matches!(a, Action::Edit(_)) {
-                    self.editor_content.perform(a);
+        // buttons from the parent state are actually accidentally pressable, so unrelated
+        // events will come in occasionally, that's not a bug, and we'll ignore them
+        if let Ok(msg) = TryInto::<MyMessage>::try_into(event) {
+            match msg {
+                Confirm => Ok(DialogResult::Close(Task::none())),
+                EditAction(a) => {
+                    if !matches!(a, Action::Edit(_)) {
+                        self.editor_content.perform(a);
+                    }
+                    Ok(DialogResult::Stay)
                 }
-                Ok(DialogResult::Stay)
             }
+        } else {
+            Ok(DialogResult::Stay)
         }
     }
 

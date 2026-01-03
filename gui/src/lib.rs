@@ -63,7 +63,7 @@ impl Gui {
         match self.try_update(message) {
             Ok(task) => task,
             Err(e) => {
-                self.state = Modal::message(self.state.clone(), "Error", e.to_string()).boxed();
+                self.state = Modal::message(self.state.clone(), "Error", format!("{e:#?}")).boxed();
                 Task::none()
             }
         }
@@ -93,23 +93,6 @@ impl Gui {
         Theme::SolarizedLight
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct StringError(pub String);
-
-impl fmt::Display for StringError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<color_eyre::Report> for StringError {
-    fn from(value: color_eyre::Report) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl std::error::Error for StringError {}
 
 pub const CLAUDE_MODEL: &str = "claude-sonnet-4-5";
 pub const PERSISTENT_INFO_NAME: &str = "persisted_info";

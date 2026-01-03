@@ -1,5 +1,8 @@
 Todos:
 
+- error handling
+- edit output
+
 Critical missing features:
 
 other:
@@ -13,7 +16,6 @@ Missing features:
 - editing world ingame
 - image styles
 - exporting world from save
-- display of costs
 
 Layout things to fix:
 

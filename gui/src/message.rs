@@ -1,24 +1,23 @@
+use color_eyre::Result;
 use derive_more::{From, TryInto};
 use engine::{
     game::{self, TurnOutput},
     llm,
 };
 
-use crate::StringError;
-
-#[derive(Debug, Clone, From, TryInto)]
+#[derive(Debug, From, TryInto)]
 pub enum Message {
     Ui(UiMessage),
     Context(ContextMessage),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ContextMessage {
-    OutputComplete(Result<TurnOutput, StringError>),
-    SummaryFinished(Result<Option<llm::OutputMessage>, StringError>),
-    NewTextFragment(Result<String, StringError>),
+    OutputComplete(Result<TurnOutput>),
+    SummaryFinished(Result<Option<llm::OutputMessage>>),
+    NewTextFragment(Result<String>),
     Init,
-    ImageReady(Result<game::Image, StringError>),
+    ImageReady(Result<game::Image>),
 }
 
 #[derive(Debug, Clone, From, TryInto)]
@@ -79,6 +78,8 @@ pub mod ui_messages {
             RegenerateButtonPressed,
             RegenerateMessage(String),
             ToMainMenu,
+            EditOutputPressed,
+            EditOutputSubmitted(String),
         }
 
         pub enum MessageDialog {

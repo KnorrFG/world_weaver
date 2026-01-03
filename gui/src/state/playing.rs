@@ -182,6 +182,16 @@ impl State for Playing {
                 cmd::task(ctx.regenerate_turn(s)?)
             }
             ToMainMenu => cmd::transition(MainMenu::try_new()?),
+            EditOutputPressed => cmd::transition(Modal::edit(
+                State::clone(self),
+                "Edit Output",
+                &ctx.output_text,
+                |s| Task::done(MyMessage::EditOutputSubmitted(s).into()),
+            )),
+            EditOutputSubmitted(s) => {
+                ctx.update_output(s)?;
+                cmd::none()
+            }
         }
     }
 
@@ -258,7 +268,7 @@ impl State for Playing {
                     ]
                 ]);
                 main_col.extend([
-                    mk_view_hidden_info_button().into(),
+                    below_output_buttons().into(),
                     widget::column(elems)
                         .max_width(500)
                         .spacing(15)
@@ -278,7 +288,7 @@ impl State for Playing {
                         .on_press(MyMessage::LoadGameFromCurrentPastButtonPressed.into())
                 ];
                 main_col.extend(elem_list![
-                    mk_view_hidden_info_button(),
+                    below_output_buttons(),
                     widget::column(elems)
                         .max_width(500)
                         .spacing(15)
@@ -407,8 +417,13 @@ fn mk_input_ui_portion<'a>(
     ]
 }
 
-fn mk_view_hidden_info_button() -> Column<'static, UiMessage> {
-    widget::column![button("👁").on_press(MyMessage::ShowHiddenText.into())]
-        .width(Length::Fill)
-        .align_x(Horizontal::Right)
+fn below_output_buttons() -> Element<'static, UiMessage> {
+    widget::row![
+        space::horizontal(),
+        button("✎").on_press(MyMessage::EditOutputPressed.into()),
+        button("👁").on_press(MyMessage::ShowHiddenText.into())
+    ]
+    .spacing(10)
+    .width(Length::Fill)
+    .into()
 }

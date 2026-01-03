@@ -6,9 +6,8 @@ use iced::{
 };
 
 use crate::{
-    TryIntoExt,
-    message::{UiMessage, ui_messages::ConfirmDialog as MyMessage},
     context::Context,
+    message::{UiMessage, ui_messages::ConfirmDialog as MyMessage},
     state::modal::{Dialog, DialogResult},
 };
 
@@ -36,13 +35,17 @@ impl ConfirmDialog {
 impl Dialog for ConfirmDialog {
     fn update(&mut self, event: UiMessage, _ctx: &mut Context) -> Result<DialogResult> {
         use MyMessage::*;
-        match event.try_into_ex()? {
-            Yes => Ok(DialogResult::Close(
-                self.yes_msg.clone().map(Task::done).unwrap_or(Task::none()),
-            )),
-            No => Ok(DialogResult::Close(
-                self.no_msg.clone().map(Task::done).unwrap_or(Task::none()),
-            )),
+        if let Ok(msg) = TryInto::<MyMessage>::try_into(event) {
+            match msg {
+                Yes => Ok(DialogResult::Close(
+                    self.yes_msg.clone().map(Task::done).unwrap_or(Task::none()),
+                )),
+                No => Ok(DialogResult::Close(
+                    self.no_msg.clone().map(Task::done).unwrap_or(Task::none()),
+                )),
+            }
+        } else {
+            Ok(DialogResult::Stay)
         }
     }
 

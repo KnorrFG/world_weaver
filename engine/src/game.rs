@@ -311,7 +311,7 @@ async fn create_new_summary(
 
             - Produce an updated summary that incorporates all rounds since the previous summary.
               Or create a new one, if there is none to update. Keep the summary as concicse as
-              possible. It may at most be 2000 words in size.
+              possible. It may at most be 1000 words in size, the shorter the better.
 
             RULES:
 
@@ -501,7 +501,8 @@ impl GameData {
            it's a note for yourself. Keep it real short 500 words at most. Don't repeat
            information here that's already in the inputs or outputs. Use to track relevant
            events that are not in the current scene, to note down hidden intentions, or plan
-           for future turns.
+           for future turns. Leaving this empty, if there is nothing hidden to track, is
+           perfectly fine.
            <<<EOS>>>
            Proposed Action 1
            <<<EOA>>>
