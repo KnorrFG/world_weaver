@@ -53,7 +53,7 @@ impl super::State for WorldMenu {
         let msg: MyMessage = event.try_into_ex()?;
         use MyMessage::*;
         match msg {
-            NewWorld => cmd::transition(WorldEditor::new()),
+            NewWorld => cmd::transition(WorldEditor::for_worlds_menu()),
             StartWorld(i) => cmd::transition(StartNewGame::new(self.worlds[i].clone())),
         }
     }

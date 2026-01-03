@@ -16,7 +16,8 @@ use crate::{
     message::{UiMessage, ui_messages::MainMenu as MyMessage},
     saves_dir,
     state::{
-        self, Modal, Playing, StateCommand, cmd, load_menu::LoadMenu, options_menu::OptionsMenu,
+        self, Modal, Playing, StateCommand, WorldEditor, cmd, load_menu::LoadMenu,
+        options_menu::OptionsMenu,
     },
 };
 
@@ -42,22 +43,7 @@ impl State for MainMenu {
         use MyMessage::*;
         match msg {
             Continue => {
-                ctx.game = None;
-                let save_path = active_game_save_path()?;
-                ensure!(
-                    save_path.exists(),
-                    "No game running. Please start a new one via the NewGame command"
-                );
-
-                debug!("Loading save: {save_path:?}");
-                let mut archive = SaveArchive::open(save_path)?;
-                let game_data = archive.read_game_data()?;
-                let game = Game::load(
-                    ctx.config.get_llm(),
-                    ctx.config.get_image_model()?,
-                    game_data,
-                );
-                ctx.game = Some(GameContext::try_new(game, archive)?);
+                ctx.load_game()?;
                 cmd::transition(Playing::new())
             }
             WorldsMenu => cmd::transition(state::WorldMenu::try_new()?),
@@ -84,6 +70,15 @@ impl State for MainMenu {
             }
             Load => cmd::transition(LoadMenu::try_new()?),
             Options => cmd::transition(OptionsMenu),
+            EditActiveWorld => {
+                let world = if let Some(gctx) = &ctx.game {
+                    &gctx.game.data.world_description
+                } else {
+                    &ctx.load_game()?.data.world_description
+                };
+
+                cmd::transition(WorldEditor::edit_running_world(world))
+            }
         }
     }
 
@@ -97,6 +92,9 @@ impl State for MainMenu {
                     .width(button_w),
                 button("Save")
                     .on_press(MyMessage::SaveButton.into())
+                    .width(button_w),
+                button("Edit active world")
+                    .on_press(MyMessage::EditActiveWorld.into())
                     .width(button_w),
             ]);
         }

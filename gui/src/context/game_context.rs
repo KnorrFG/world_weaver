@@ -13,7 +13,10 @@ use crate::{
     message::{ContextMessage, Message},
 };
 use engine::{
-    game::{AdvanceResult, Game, Image, StartResultOrData, TurnData, TurnInput, TurnOutput},
+    game::{
+        AdvanceResult, Game, Image, StartResultOrData, TurnData, TurnInput, TurnOutput,
+        WorldDescription,
+    },
     save_archive::SaveArchive,
 };
 
@@ -435,6 +438,12 @@ impl GameContext {
                         {s}"
             ),
         }))
+    }
+
+    pub(crate) fn upate_world_description(&mut self, world: WorldDescription) -> Result<()> {
+        self.game.data.world_description = world;
+        self.save.write_game_data(&self.game.data)?;
+        Ok(())
     }
 }
 

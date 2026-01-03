@@ -111,6 +111,7 @@ pub mod ui_messages {
             SaveButton,
             Save(String),
             Load,
+            EditActiveWorld,
         }
 
         pub enum WorldMenu {
