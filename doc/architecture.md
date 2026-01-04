@@ -2,7 +2,7 @@
 
 World Weaver is split into two crates: gui and engine. Gui contains the UI, the
 engine the UI independent logic. The key-type in this crate is `game::Game`.
-A game consists of an LLM, and image model and it's data.
+A game consists of an LLM, and image model and its data.
 
 The main-method of `Game` is `send_to_llm` it takes turn inputs and produces 3 things:
 - A future that will return the Generated image,
@@ -11,7 +11,7 @@ The main-method of `Game` is `send_to_llm` it takes turn inputs and produces 3 t
 
 This will not change the game in any way. Instead, once all the futures returned,
 `Game::update` must be called. This may seem inconvenient, but this design makes it
-so that game will not be borrowed by `send_to_llm`s outputs, which makes life SO
+so that the game-object will not be borrowed by `send_to_llm`s outputs, which makes life SO
 much easier. iced comes with an async-runtime, and I use the "tokio" feature, because
 reqwest requires tokio. Nothing is thread/async-safe. The code is modeled
 in a way that makes that unnecessary, which I like much more than worrying about
@@ -19,11 +19,11 @@ synchronization everywhere.
 
 ## AI Models
 
-And LLM is anything that implements `llm::LLM`. Currently, there is only `llm::claude::Claude`
+An LLM is anything that implements `llm::LLM`. Currently, there is only `llm::claude::Claude`
 but adding more would be trivial, just take the existing model as example.
 Similarly, an image model is anything that implements `image_model::ImageModel`
 Currently there are two types that do that: `image_model::flux2::Flux2` and `image_model::replicate::Replicate`.
-You can use the `image_model::ProvidedModel` type to instantiate models.. Adding another
+You can use the `image_model::ProvidedModel` type to instantiate models. Adding another
 model that is hosted on Replicate will be very easy, but you can also add new Providers.
 Make sure to adjust the `Model`, `Provider` and `ProvidedModel` enums. `Model` is Flux1 or Flux2
 `Provider` is Replicate or Black Forest Labs. A `ProvidedModel` is a combination of the two.
@@ -62,7 +62,7 @@ Images in the turn data are referenced by IDs (see next section).
 Generating an Image every turn leads to quite a bit of data, I want single-file
 saves, and I don't want to rewrite the whole file when I add an image. I didn't
 find an archive format that would give me that, so I wrote a
-custom save-archive format. It's `game::save_archive`. As long
+custom save-archive format. It's in `game::save_archive`. As long
 as a game is running, the gui will hold an archive open. When an image
 is received, it's added to the archive, the IDs in the `TurnData` objects
 are managed by the archive.
@@ -136,6 +136,7 @@ pub struct GameContext {
     pub save: SaveArchive,
     pub sub_state: SubState,
     pub output_text: String,
+    pub current_generation: usize,
 
     // UI helpers, not important for internal logic
     pub output_markdown: Vec<markdown::Item>,
@@ -167,8 +168,16 @@ sense to look at that.
 
 `output_markdown` needs to be parsed from the `output_text`. Since I don't want
 to do this in `Playing::view` everytime, I do it here. `image_data` contains the
-image in a form that iced can render directly (the `ImgHandle`) and the Images
+image in a form that iced can render directly (the `ImgHandle`) and the image's
 caption. Parsing the image bytes into an `ImgHandle` is also something that I don't
 want to do on every `Playing::view` call, so it's done here. The `output_text`
 holds the turns output as it's coming in from the stream.
+
+The `current_generation` field is there for error handling. If the LLM violates
+the output format or Flux2, in all its wisdom (/s),
+decides that your Image should not be rendered, there
+will be an error and the turn can't be completed. However, other events from
+the invalid turn might still come in. So we mark those with a generation.
+When an error occurs, we reset the substate, increase the generation, and ignore
+all events from older generations. 
 
