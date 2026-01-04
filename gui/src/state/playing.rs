@@ -284,7 +284,7 @@ impl State for Playing {
             }) => {
                 let elems = elem_list![
                     widget::Space::new().height(20),
-                    mk_turn_selection_buttons(ctx, *turn, &self.goto_turn_string()),
+                    mk_turn_selection_buttons(ctx, *turn + 1, &self.goto_turn_string()),
                     button("Goto current turn").on_press(MyMessage::GoToCurrentTurn.into()),
                     button("Load game from here")
                         .on_press(MyMessage::LoadGameFromCurrentPastButtonPressed.into())
@@ -359,7 +359,7 @@ fn mk_turn_selection_buttons<'a>(
     goto_turn_input: &str,
 ) -> row::Row<'a, UiMessage> {
     let mut row = vec![];
-    if current_turn > 0 {
+    if current_turn > 1 {
         row.push(
             widget::button("←")
                 .on_press(MyMessage::PrevTurnButtonPressed.into())
@@ -375,7 +375,7 @@ fn mk_turn_selection_buttons<'a>(
         widget::button("Goto Turn").on_press(MyMessage::GotoTurnPressed.into()),
         widget::space::horizontal()
     ]);
-    if current_turn < ctx.game.current_turn() - 1 {
+    if current_turn < ctx.game.current_turn() {
         row.push(
             widget::button("→")
                 .on_press(MyMessage::NextTurnButtonPressed.into())

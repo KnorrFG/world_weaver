@@ -41,7 +41,9 @@ impl State for MainMenu {
         use MyMessage::*;
         match msg {
             Continue => {
-                ctx.load_game()?;
+                if ctx.game.is_none() {
+                    ctx.load_game()?;
+                }
                 cmd::transition(Playing::new())
             }
             WorldsMenu => cmd::transition(state::WorldMenu::try_new()?),

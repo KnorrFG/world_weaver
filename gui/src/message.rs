@@ -13,11 +13,11 @@ pub enum Message {
 
 #[derive(Debug)]
 pub enum ContextMessage {
-    OutputComplete(Result<TurnOutput>),
-    SummaryFinished(Result<Option<llm::OutputMessage>>),
-    NewTextFragment(Result<String>),
+    OutputComplete(usize, Result<TurnOutput>),
+    SummaryFinished(usize, Result<Option<llm::OutputMessage>>),
+    NewTextFragment(usize, Result<String>),
     Init,
-    ImageReady(Result<game::Image>),
+    ImageReady(usize, Result<game::Image>),
 }
 
 #[derive(Debug, Clone, From, TryInto)]

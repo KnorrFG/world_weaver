@@ -24,6 +24,7 @@ pub struct GameContext {
     pub game: Game,
     pub save: SaveArchive,
     pub sub_state: SubState,
+    pub current_generation: usize,
     pub output_markdown: Vec<markdown::Item>,
     pub output_text: String,
     pub image_data: Option<(ImgHandle, String)>,
@@ -81,6 +82,7 @@ impl GameContext {
                 output_markdown,
                 image_data,
                 output_text,
+                current_generation: 0,
             })
         } else {
             Ok(Self {
@@ -90,12 +92,37 @@ impl GameContext {
                 output_markdown: vec![],
                 image_data: None,
                 output_text: String::new(),
+                current_generation: 0,
             })
         }
     }
 
     pub fn update(&mut self, message: ContextMessage) -> Result<Task<Message>> {
         use ContextMessage::*;
+
+        /// this macro will make sure, if there was an error, that the sub-state
+        /// is reset, and the generation is increased, so other incoming messages
+        /// for the errornous turn will be ignored
+        macro_rules! unpack_received_msg {
+            ($invar:ident, $generation:ident) => {{
+                if $generation < self.current_generation {
+                    return Ok(Task::none());
+                }
+
+                let Ok(output) = $invar else {
+                    self.current_generation += 1;
+                    self.load_completed_turn(self.current_turn() - 1)?;
+                    bail!(indoc::formatdoc! {"
+                        There was an error with the LLM response or the image model.
+                        This can happen. Try again.
+                        If it repeats, try doing something else, if you're on Flux2, try Flux1.
+                        Details:
+                        {:?}", $invar});
+                };
+                output
+            }}
+        }
+
         match message {
             Init => match self.game.start_or_get_last_output() {
                 StartResultOrData::StartResult(
@@ -106,9 +133,15 @@ impl GameContext {
                     },
                     input,
                 ) => {
-                    let output_fut = Task::perform(round_output, |res| OutputComplete(res).into());
-                    let image_fut = Task::perform(image, |res| ImageReady(res).into());
-                    let stream_task = Task::run(text_stream, |res| NewTextFragment(res).into());
+                    let generation = self.current_generation;
+                    let output_fut = Task::perform(round_output, move |res| {
+                        OutputComplete(generation, res).into()
+                    });
+                    let image_fut =
+                        Task::perform(image, move |res| ImageReady(generation, res).into());
+                    let stream_task = Task::run(text_stream, move |res| {
+                        NewTextFragment(generation, res).into()
+                    });
                     self.sub_state = WaitingForOutput {
                         input,
                         output: None,
@@ -129,9 +162,8 @@ impl GameContext {
                 }
             },
 
-            OutputComplete(turn_output) => {
-                let output = turn_output?;
-
+            OutputComplete(generation, turn_output) => {
+                let output = unpack_received_msg!(turn_output, generation);
                 let WaitingForOutput {
                     stream_buffer,
                     input,
@@ -153,8 +185,8 @@ impl GameContext {
                 }
             }
 
-            SummaryFinished(message) => {
-                let summary_msg = message?;
+            SummaryFinished(generation, message) => {
+                let summary_msg = unpack_received_msg!(message, generation);
                 let WaitingForSummary {
                     input,
                     output,
@@ -174,19 +206,20 @@ impl GameContext {
                     turn_data: self.game.data.turn_data.last().unwrap().clone(),
                 }
                 .into();
+                self.current_generation += 1;
                 Ok(Task::none())
             }
 
-            NewTextFragment(t) => {
-                let t = t?;
+            NewTextFragment(generation, t) => {
+                let t = unpack_received_msg!(t, generation);
                 self.sub_state.stream_buffer_mut()?.push_str(&t);
                 self.output_text.push_str(&t);
                 self.output_markdown = markdown::parse(&self.output_text).collect();
                 Ok(Task::none())
             }
 
-            ImageReady(image) => {
-                let img = image?;
+            ImageReady(generation, image) => {
+                let img = unpack_received_msg!(image, generation);
                 let WaitingForOutput {
                     input,
                     output,
@@ -322,8 +355,9 @@ impl GameContext {
         }
         .into();
         let fut = self.game.mk_summary_if_neccessary();
-        Ok(Task::perform(fut, |res| {
-            ContextMessage::SummaryFinished(res).into()
+        let generation = self.current_generation;
+        Ok(Task::perform(fut, move |res| {
+            ContextMessage::SummaryFinished(generation, res).into()
         }))
     }
 
@@ -342,10 +376,17 @@ impl GameContext {
             stream_buffer: "".into(),
         }
         .into();
+        let generation = self.current_generation;
         Task::batch([
-            Task::perform(round_output, |x| ContextMessage::OutputComplete(x).into()),
-            Task::perform(image, |x| ContextMessage::ImageReady(x).into()),
-            Task::run(text_stream, |x| ContextMessage::NewTextFragment(x).into()),
+            Task::perform(round_output, move |x| {
+                ContextMessage::OutputComplete(generation, x).into()
+            }),
+            Task::perform(image, move |x| {
+                ContextMessage::ImageReady(generation, x).into()
+            }),
+            Task::run(text_stream, move |x| {
+                ContextMessage::NewTextFragment(generation, x).into()
+            }),
         ])
     }
 

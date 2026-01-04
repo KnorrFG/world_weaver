@@ -436,7 +436,7 @@ async fn get_image(
             "{} {} {}",
             style.prefix.trim(),
             description.trim(),
-            style.prefix.trim()
+            style.postfix.trim()
         );
     }
 
