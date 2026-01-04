@@ -1,5 +1,5 @@
 use crate::{
-    TryIntoExt, bold_text,
+    bold_text,
     context::Context,
     message::{UiMessage, ui_messages::MessageDialog as MyMessage},
     state::modal::modal_outer_container,

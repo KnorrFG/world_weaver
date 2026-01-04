@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, pin::Pin};
 use crate::{
     HIST_SIZE, ImgModBox, LLMBox, N_PROPOSED_OPTIONS,
     game::stream_finder::{MatchResult, StreamFinder},
-    image_model::{self},
+    image_model::{self, ModelStyle},
     llm::{InputMessage, OutputMessage, Request, ResponseFragment},
 };
 
@@ -25,6 +25,7 @@ const SUMMARY_INTERVAL: usize = 8;
 pub struct Game {
     pub llm: LLMBox,
     pub imgmod: ImgModBox,
+    pub img_style: Option<ModelStyle>,
     pub data: GameData,
 }
 
@@ -33,6 +34,7 @@ impl Clone for Game {
         Self {
             llm: self.llm.clone(),
             data: self.data.clone(),
+            img_style: self.img_style.clone(),
             imgmod: self.imgmod.clone(),
         }
     }
@@ -51,8 +53,18 @@ pub struct AdvanceResult {
 }
 
 impl Game {
-    pub fn load(llm: LLMBox, imgmod: ImgModBox, data: GameData) -> Self {
-        Game { llm, data, imgmod }
+    pub fn load(
+        llm: LLMBox,
+        imgmod: ImgModBox,
+        data: GameData,
+        img_style: Option<ModelStyle>,
+    ) -> Self {
+        Game {
+            llm,
+            data,
+            imgmod,
+            img_style,
+        }
     }
 
     pub fn try_new(
@@ -60,6 +72,7 @@ impl Game {
         imgmod: ImgModBox,
         world_description: WorldDescription,
         player_character: String,
+        img_style: Option<ModelStyle>,
     ) -> Result<Self> {
         ensure!(
             world_description
@@ -71,6 +84,7 @@ impl Game {
         Ok(Game {
             llm,
             imgmod,
+            img_style,
             data: GameData {
                 world_description,
                 pc: player_character,
@@ -166,7 +180,11 @@ impl Game {
         };
 
         AdvanceResult {
-            image: Box::pin(get_image(rx_img_description, self.imgmod.clone())),
+            image: Box::pin(get_image(
+                rx_img_description,
+                self.imgmod.clone(),
+                self.img_style.clone(),
+            )),
             text_stream: Box::pin(stream),
             round_output: Box::pin(async move { Ok(rx_output.await?) }),
         }
@@ -253,7 +271,10 @@ impl Game {
             StartResultOrData::StartResult(
                 self.send_to_llm(
                     input.clone(),
-                    self.imgmod.model().extra_generation_instructions(),
+                    self.imgmod
+                        .provided_model()
+                        .model()
+                        .extra_generation_instructions(),
                 ),
                 input,
             )
@@ -407,11 +428,21 @@ fn parse_image_description(src: &str) -> Result<ImageDescription> {
 async fn get_image(
     rx_img_description: oneshot::Receiver<ImageDescription>,
     imgmod: ImgModBox,
+    style: Option<ModelStyle>,
 ) -> Result<Image> {
     let ImageDescription {
-        description,
+        mut description,
         caption,
     } = rx_img_description.await?;
+
+    if let Some(style) = style {
+        description = format!(
+            "{} {} {}",
+            style.prefix.trim(),
+            description.trim(),
+            style.prefix.trim()
+        );
+    }
 
     let image_model::Image { data, cost } = imgmod.get_image(&description).await?;
 

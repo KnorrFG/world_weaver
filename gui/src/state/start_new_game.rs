@@ -35,6 +35,7 @@ impl StartNewGame {
             config.get_image_model()?,
             self.world.clone(),
             c,
+            config.active_style().cloned(),
         )?)
     }
 }

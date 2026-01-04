@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fmt, fs,
     path::{Path, PathBuf},
 };
@@ -8,16 +7,16 @@ use color_eyre::{
     Result,
     eyre::{WrapErr as _, eyre},
 };
-use engine::{ImgModBox, LLMBox, image_model, llm::Claude};
 use iced::{
     Element, Font, Length, Task, Theme,
     font::{self},
     padding,
     widget::{container, scrollable, text},
 };
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
+    context::Config,
     message::Message,
     state::{Modal, State, StateExt, options_menu::OptionsMenu},
 };
@@ -35,7 +34,7 @@ pub struct Gui {
 }
 
 impl Gui {
-    pub fn new(mb_config: Option<Config>) -> Self {
+    pub fn new(mb_config: Option<Config>, opt_menu: OptionsMenu) -> Self {
         if let Some(cfg) = mb_config {
             Gui {
                 state: Box::new(state::MainMenu::try_new().expect("Couldn't start Game")),
@@ -44,7 +43,7 @@ impl Gui {
         } else {
             Gui {
                 state: Modal::message(
-                    OptionsMenu.boxed(),
+                    opt_menu.boxed(),
                     "Welcome",
                     indoc::indoc! {"
                     Hi, since this is your first time starting World Weaver, please configure the
@@ -63,7 +62,7 @@ impl Gui {
         match self.try_update(message) {
             Ok(task) => task,
             Err(e) => {
-                self.state = Modal::message(self.state.clone(), "Error", format!("{e:#?}")).boxed();
+                self.state = Modal::message(self.state.clone(), "Error", format!("{e:?}")).boxed();
                 Task::none()
             }
         }
@@ -97,28 +96,6 @@ impl Gui {
 pub const CLAUDE_MODEL: &str = "claude-sonnet-4-5";
 pub const PERSISTENT_INFO_NAME: &str = "persisted_info";
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct Config {
-    pub claude_token: String,
-    pub current_img_model: image_model::Model,
-    pub img_model_tokens: HashMap<image_model::ModelProvider, String>,
-}
-
-impl Config {
-    pub fn get_llm(&self) -> LLMBox {
-        Box::new(Claude::new(self.claude_token.clone(), CLAUDE_MODEL.into()))
-    }
-
-    pub fn get_image_model(&self) -> Result<ImgModBox> {
-        let model = self.current_img_model;
-        let key = self
-            .img_model_tokens
-            .get(&model.provider())
-            .ok_or(eyre!("No token for {model}"))?;
-        Ok(model.make(key.clone()))
-    }
-}
-
 pub fn load_json_file<T: DeserializeOwned>(world: &Path) -> Result<T> {
     let src = fs::read_to_string(world)?;
     Ok(serde_json::from_str(&src)?)
@@ -126,6 +103,15 @@ pub fn load_json_file<T: DeserializeOwned>(world: &Path) -> Result<T> {
 
 pub fn save_json_file<T: Serialize>(path: &Path, x: &T) -> Result<()> {
     Ok(fs::write(path, &serde_json::to_string(x)?)?)
+}
+
+pub fn load_ron_file<T: DeserializeOwned>(world: &Path) -> Result<T> {
+    let src = fs::read_to_string(world)?;
+    Ok(ron::from_str(&src)?)
+}
+
+pub fn save_ron_file<T: Serialize>(path: &Path, x: &T) -> Result<()> {
+    Ok(fs::write(path, &ron::to_string(x)?)?)
 }
 
 pub fn data_dir() -> Result<PathBuf> {
@@ -142,10 +128,14 @@ pub fn worlds_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("worlds"))
 }
 
+pub fn styles_dir() -> Result<PathBuf> {
+    Ok(data_dir()?.join("styles"))
+}
+
 pub fn config_path() -> Result<PathBuf> {
     Ok(dirs::config_local_dir()
         .ok_or(eyre!("Couldn't get config dir"))?
-        .join("world_weaver.json"))
+        .join("world_weaver.ron"))
 }
 
 pub fn active_game_save_path() -> Result<PathBuf> {
@@ -157,13 +147,13 @@ pub fn load_config() -> Result<Option<Config>> {
     if !path.exists() {
         Ok(None)
     } else {
-        load_json_file(&path).map(Some)
+        load_ron_file(&path).map(Some)
     }
 }
 
 pub fn save_config(ps: &Config) -> Result<()> {
     let path = config_path()?;
-    save_json_file(&path, ps)?;
+    save_ron_file(&path, ps)?;
     Ok(())
 }
 

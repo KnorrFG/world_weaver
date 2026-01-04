@@ -1,10 +1,10 @@
 use clap::Parser;
 use color_eyre::Result;
-use engine::image_model::Model;
+use engine::image_model::ProvidedModel;
 
 #[derive(clap::Parser)]
 struct Arg {
-    model: Model,
+    model: ProvidedModel,
     key: String,
     description: String,
 }

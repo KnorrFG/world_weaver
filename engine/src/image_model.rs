@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{fmt::Display, pin::Pin};
 
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,6 @@ use crate::ImgModBox;
     Debug,
     Clone,
     Copy,
-    Display,
     clap::ValueEnum,
     Serialize,
     Deserialize,
@@ -26,12 +25,18 @@ use crate::ImgModBox;
     EnumIter,
     Default,
 )]
-pub enum Model {
-    Flux1,
+
+pub enum ProvidedModel {
+    Flux1Replicate,
+    Flux2BLF,
     #[default]
-    Flux2,
-    #[strum(to_string = "Flux2")]
     Flux2Replicate,
+}
+
+impl Display for ProvidedModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.model(), self.provider())
+    }
 }
 
 #[derive(
@@ -46,17 +51,58 @@ pub enum Model {
     PartialEq,
     Eq,
     EnumIter,
+    PartialOrd,
+    Ord,
 )]
-pub enum ModelProvider {
-    #[strum(to_string = "Black Forest Labs")]
-    BFL, // BlackForestLabs
-    Replicate,
+pub enum Model {
+    Flux1,
+    Flux2,
 }
 
 impl Model {
+    pub fn extra_generation_instructions(&self) -> &'static str {
+        match self {
+            Self::Flux1 => {
+                r"
+                    The image model is Flux1. Keep the input short, everything after 77 tokens will be clipped.
+                "
+            }
+            Self::Flux2 => {
+                r"
+                   The image model is Flux2. Make sure to formulate the image description in a way that avoids
+                   image moderation because of sexual content. When you describe anatomy,
+                   do it in a non-erotic way.
+                "
+            }
+        }
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Display,
+    clap::ValueEnum,
+    Serialize,
+    Deserialize,
+    Hash,
+    PartialEq,
+    Eq,
+    EnumIter,
+    PartialOrd,
+    Ord,
+)]
+pub enum ModelProvider {
+    #[strum(to_string = "Black Forest Labs")]
+    BFL,
+    Replicate,
+}
+
+impl ProvidedModel {
     pub fn make(&self, key: String) -> ImgModBox {
         match self {
-            Model::Flux1 => Box::new(replicate::ReplicateImageModel::new(
+            ProvidedModel::Flux1Replicate => Box::new(replicate::ReplicateImageModel::new(
                 "https://api.replicate.com/v1/predictions".into(),
                 *self,
                 key,
@@ -72,8 +118,8 @@ impl Model {
                     })
                 },
             )),
-            Model::Flux2 => Box::new(Flux2::new(key)),
-            Model::Flux2Replicate => Box::new(replicate::ReplicateImageModel::new(
+            ProvidedModel::Flux2BLF => Box::new(Flux2::new(key)),
+            ProvidedModel::Flux2Replicate => Box::new(replicate::ReplicateImageModel::new(
                 "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions"
                     .into(),
                 *self,
@@ -96,35 +142,19 @@ impl Model {
         }
     }
 
-    pub fn extra_generation_instructions(&self) -> &'static str {
+    pub fn provider(&self) -> ModelProvider {
         match self {
-            Model::Flux1 => {
-                r"
-                    The model is Flux1. Keep the input short, everything after 77 tokens will be clipped.
-                "
-            }
-            Model::Flux2 => {
-                r"
-                   The model is Flux2. Make sure to formulate the image description in a way that avoids
-                   image moderation because of sexual content. When you describe anatomy,
-                   do it in a non-erotic way.
-                "
-            }
-            Model::Flux2Replicate => {
-                r"
-                   The model is Flux2. Make sure to formulate the image description in a way that avoids
-                   image moderation because of sexual content. When you describe anatomy,
-                   do it in a non-erotic way.
-                "
-            }
+            ProvidedModel::Flux1Replicate => ModelProvider::Replicate,
+            ProvidedModel::Flux2Replicate => ModelProvider::Replicate,
+            ProvidedModel::Flux2BLF => ModelProvider::BFL,
         }
     }
 
-    pub fn provider(&self) -> ModelProvider {
+    pub fn model(&self) -> Model {
         match self {
-            Model::Flux1 => ModelProvider::Replicate,
-            Model::Flux2Replicate => ModelProvider::Replicate,
-            Model::Flux2 => ModelProvider::BFL,
+            ProvidedModel::Flux1Replicate => Model::Flux1,
+            ProvidedModel::Flux2BLF => Model::Flux2,
+            ProvidedModel::Flux2Replicate => Model::Flux2,
         }
     }
 }
@@ -141,5 +171,11 @@ pub trait ImageModel {
     ) -> Pin<Box<dyn Future<Output = Result<Image>> + Send + 'a>>;
 
     fn clone(&self) -> Box<dyn ImageModel + Send + 'static>;
-    fn model(&self) -> Model;
+    fn provided_model(&self) -> ProvidedModel;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelStyle {
+    pub prefix: String,
+    pub postfix: String,
 }

@@ -38,7 +38,7 @@ pub enum UiMessage {
 pub mod ui_messages {
     use super::*;
 
-    use engine::image_model;
+    use engine::image_model::{self, Model};
     use iced::widget::text_editor;
 
     macro_rules! ui_enums {
@@ -143,7 +143,13 @@ pub mod ui_messages {
         pub enum OptionsMenu {
             ClaudeTokenChanged(String),
             ImgModelTokenChanged(image_model::ModelProvider, String),
-            SelectImageModel(image_model::Model),
+            SelectImageModel(image_model::ProvidedModel),
+            SelectStyle(usize),
+            UnselectStyle(image_model::Model),
+            EditStylePrefix(usize, text_editor::Action),
+            EditStylePostfix(usize,text_editor::Action),
+            NewStyle(Model, String),
+            AddModelStyleButton(Model),
             Ok,
         }
     }

@@ -1,7 +1,5 @@
 Todos:
 
-Critical missing features:
-
 other:
 	- game::send_to_llm is in urgent need of a refactor
 	- check menu and dialog code consistency and refactor needs
@@ -10,9 +8,10 @@ other:
 
 Missing features:
 
-- editing world ingame
 - image styles
 - exporting world from save
+- edit/delete worlds
+- delete saves
 
 Layout things to fix:
 

@@ -9,14 +9,14 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::time::sleep;
 
-use crate::{ImageModel, image_model::Model};
+use crate::{ImageModel, image_model::ProvidedModel};
 
 use super::Image;
 
 #[derive(Clone)]
 pub struct ReplicateImageModel {
     url: String,
-    model: Model,
+    model: ProvidedModel,
     client: Client,
     api_key: String,
     version: Option<String>,
@@ -26,7 +26,7 @@ pub struct ReplicateImageModel {
 impl ReplicateImageModel {
     pub fn new(
         url: String,
-        model: Model,
+        model: ProvidedModel,
         api_key: String,
         version: Option<String>,
         input_builder: impl Fn(&str) -> serde_json::Value + Send + Sync + 'static,
@@ -134,7 +134,7 @@ impl ImageModel for ReplicateImageModel {
         Box::new(Clone::clone(self))
     }
 
-    fn model(&self) -> Model {
+    fn provided_model(&self) -> ProvidedModel {
         self.model
     }
 }

@@ -336,7 +336,11 @@ impl GameContext {
             image,
         } = self.game.send_to_llm(
             input.clone(),
-            self.game.imgmod.model().extra_generation_instructions(),
+            self.game
+                .imgmod
+                .provided_model()
+                .model()
+                .extra_generation_instructions(),
         );
         self.sub_state = WaitingForOutput {
             input,

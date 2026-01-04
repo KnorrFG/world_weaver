@@ -1,17 +1,15 @@
 use std::fs;
 
-use color_eyre::{Result, eyre::ensure};
-use engine::{game::Game, save_archive::SaveArchive};
+use color_eyre::Result;
 use iced::{
     Length, Task,
     alignment::Horizontal,
     widget::{button, column, container},
 };
-use log::debug;
 
 use crate::{
     State, TryIntoExt, active_game_save_path,
-    context::{Context, game_context::GameContext},
+    context::Context,
     elem_list,
     message::{UiMessage, ui_messages::MainMenu as MyMessage},
     saves_dir,
@@ -69,7 +67,7 @@ impl State for MainMenu {
                 ))
             }
             Load => cmd::transition(LoadMenu::try_new()?),
-            Options => cmd::transition(OptionsMenu),
+            Options => cmd::transition(OptionsMenu::new(&ctx.config)?),
             EditActiveWorld => {
                 let world = if let Some(gctx) = &ctx.game {
                     &gctx.game.data.world_description

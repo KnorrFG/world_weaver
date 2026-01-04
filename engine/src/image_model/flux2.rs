@@ -5,7 +5,7 @@ use log::debug;
 
 use crate::image_model::{Image, ImageModel};
 
-use super::Model;
+use super::ProvidedModel;
 
 pub mod flux2_api;
 
@@ -50,7 +50,7 @@ impl ImageModel for Flux2 {
         Box::new(Clone::clone(self))
     }
 
-    fn model(&self) -> Model {
-        Model::Flux2
+    fn provided_model(&self) -> ProvidedModel {
+        ProvidedModel::Flux2BLF
     }
 }

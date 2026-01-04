@@ -92,7 +92,12 @@ impl super::State for LoadMenu {
                 fs::copy(&save.path, &active_game_path)?;
                 let mut archive = SaveArchive::open(&active_game_path)?;
                 let gd = archive.read_game_data()?;
-                let game = Game::load(ctx.config.get_llm(), ctx.config.get_image_model()?, gd);
+                let game = Game::load(
+                    ctx.config.get_llm(),
+                    ctx.config.get_image_model()?,
+                    gd,
+                    ctx.config.active_style().cloned(),
+                );
                 let game_ctx = GameContext::try_new(game, archive)?;
                 ctx.game = Some(game_ctx);
                 cmd::transition(Playing::new())
