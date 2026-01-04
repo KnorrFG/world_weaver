@@ -175,7 +175,7 @@ holds the turns output as it's coming in from the stream.
 
 The `current_generation` field is there for error handling. If the LLM violates
 the output format or Flux2, in all its wisdom (/s),
-decides that your Image should not be rendered, there
+decides that your image should not be rendered, there
 will be an error and the turn can't be completed. However, other events from
 the invalid turn might still come in. So we mark those with a generation.
 When an error occurs, we reset the substate, increase the generation, and ignore
