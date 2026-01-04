@@ -5918,7 +5918,6 @@ dependencies = [
  "pretty_env_logger",
  "ron",
  "serde",
- "serde_json",
  "strum",
 ]
 

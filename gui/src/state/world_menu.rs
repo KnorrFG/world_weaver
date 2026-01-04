@@ -9,11 +9,13 @@ use iced::{
 use log::debug;
 
 use crate::{
-    TryIntoExt, bold_text, elem_list, load_json_file,
+    TryIntoExt, bold_text, elem_list, load_ron_file,
     message::ui_messages::WorldMenu as MyMessage,
     state::{WorldEditor, cmd, start_new_game::StartNewGame},
     top_level_container, worlds_dir,
 };
+
+const EXAMPLE_WORLD: &str = include_str!("../../../Neon_Shadows.ron");
 
 #[derive(Clone, Debug)]
 pub struct WorldMenu {
@@ -23,12 +25,18 @@ pub struct WorldMenu {
 impl WorldMenu {
     pub fn try_new() -> Result<Self> {
         let dir = worlds_dir()?;
+
+        if !dir.exists() {
+            fs::create_dir_all(&dir)?;
+            fs::write(dir.join("Neon_Shadows.ron"), EXAMPLE_WORLD)?;
+        }
+
         debug!("World-files (in {dir:?}):",);
         let worlds = fs::read_dir(dir)?
             .map(|p| {
                 let p = p?;
                 debug!("{:?}", p.path());
-                load_json_file::<WorldDescription>(&p.path())
+                load_ron_file::<WorldDescription>(&p.path())
             })
             .collect::<Result<Vec<_>>>()?;
 

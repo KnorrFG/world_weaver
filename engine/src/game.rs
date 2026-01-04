@@ -94,10 +94,15 @@ impl Game {
         })
     }
 
-    pub fn send_to_llm(&self, input: TurnInput, extra_img_infos: &str) -> AdvanceResult {
+    pub fn send_to_llm(&self, input: TurnInput) -> AdvanceResult {
         let (tx_output, rx_output) = oneshot::channel();
         let (tx_img_description, rx_img_description) = oneshot::channel();
         let mut tx_img_description = Some(tx_img_description);
+        let extra_img_infos = self
+            .imgmod
+            .provided_model()
+            .model()
+            .extra_generation_instructions();
         let req = self.data.construct_request(&input, extra_img_infos);
         let mut llm = self.llm.clone();
 
@@ -268,16 +273,7 @@ impl Game {
             StartResultOrData::Data(turn.clone())
         } else {
             let input = TurnInput::player_action(self.data.world_description.init_action.clone());
-            StartResultOrData::StartResult(
-                self.send_to_llm(
-                    input.clone(),
-                    self.imgmod
-                        .provided_model()
-                        .model()
-                        .extra_generation_instructions(),
-                ),
-                input,
-            )
+            StartResultOrData::StartResult(self.send_to_llm(input.clone()), input)
         }
     }
 }

@@ -96,15 +96,6 @@ impl Gui {
 pub const CLAUDE_MODEL: &str = "claude-sonnet-4-5";
 pub const PERSISTENT_INFO_NAME: &str = "persisted_info";
 
-pub fn load_json_file<T: DeserializeOwned>(world: &Path) -> Result<T> {
-    let src = fs::read_to_string(world)?;
-    Ok(serde_json::from_str(&src)?)
-}
-
-pub fn save_json_file<T: Serialize>(path: &Path, x: &T) -> Result<()> {
-    Ok(fs::write(path, &serde_json::to_string(x)?)?)
-}
-
 pub fn load_ron_file<T: DeserializeOwned>(world: &Path) -> Result<T> {
     let src = fs::read_to_string(world)?;
     Ok(ron::from_str(&src)?)

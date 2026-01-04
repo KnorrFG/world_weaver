@@ -334,14 +334,7 @@ impl GameContext {
             text_stream,
             round_output,
             image,
-        } = self.game.send_to_llm(
-            input.clone(),
-            self.game
-                .imgmod
-                .provided_model()
-                .model()
-                .extra_generation_instructions(),
-        );
+        } = self.game.send_to_llm(input.clone());
         self.sub_state = WaitingForOutput {
             input,
             output: None,

@@ -2,13 +2,9 @@ Todos:
 
 other:
 	- game::send_to_llm is in urgent need of a refactor
-	- check menu and dialog code consistency and refactor needs
-	- check stuff like moving game creation into context, there is very similar code in multiple
-	  places that may be deduplicatable
 
 Missing features:
 
-- image styles
 - exporting world from save
 - edit/delete worlds
 - delete saves

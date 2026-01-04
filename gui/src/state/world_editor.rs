@@ -5,7 +5,7 @@ use crate::{
     context::Context,
     elem_list,
     message::{UiMessage, ui_messages::WorldEditor as MyMessage},
-    save_json_file,
+    save_ron_file,
     state::{
         MainMenu, Modal, Playing, StateCommand, StateExt, WorldMenu, cmd,
         start_new_game::StartNewGame,
@@ -109,7 +109,7 @@ impl WorldEditor {
         ensure!(!path.exists(), "A world with that name alread exists");
         let world = self.mk_world();
         fs::create_dir_all(path.parent().unwrap())?;
-        save_json_file(&path, &world)?;
+        save_ron_file(&path, &world)?;
         Ok(world)
     }
 
@@ -127,7 +127,7 @@ impl WorldEditor {
     }
 
     fn current_save_path(&self) -> Result<PathBuf> {
-        Ok(worlds_dir()?.join(self.name.replace(" ", "_") + ".json"))
+        Ok(worlds_dir()?.join(self.name.replace(" ", "_") + ".ron"))
     }
 
     fn try_save_world_to_context(&mut self, ctx: &mut Context) -> Result<()> {

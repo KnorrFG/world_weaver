@@ -225,7 +225,6 @@ impl State for Playing {
                     widget::text(caption).into_elem()
                 },
             ]);
-            // .width(Length::Shrink);
         };
 
         let mut main_col: Vec<Element<UiMessage>> = vec![];
@@ -242,10 +241,8 @@ impl State for Playing {
             text_col.push(widget::rule::horizontal(2).into());
         }
 
-        text_col.push(
-            markdown::view(&ctx.output_markdown, Theme::TokyoNight)
-                .map(|_| unreachable!()),
-        );
+        text_col
+            .push(markdown::view(&ctx.output_markdown, Theme::TokyoNight).map(|_| unreachable!()));
 
         main_col.push(widget::column(text_col).spacing(20).into());
 
