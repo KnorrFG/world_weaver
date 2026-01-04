@@ -263,7 +263,7 @@ impl Game {
         self.data.turn_data.is_empty()
     }
 
-    pub fn start_or_get_last_output<'a>(&'a mut self) -> StartResultOrData {
+    pub fn start_or_get_last_output(&mut self) -> StartResultOrData {
         if let Some(turn) = self.data.turn_data.last() {
             StartResultOrData::Data(turn.clone())
         } else {
@@ -402,10 +402,10 @@ async fn create_new_summary(
     });
 
     let response = loop {
-        if let Some(m) = stream.try_next().await? {
-            if let ResponseFragment::MessageComplete(m) = m {
-                break m;
-            }
+        if let Some(m) = stream.try_next().await?
+            && let ResponseFragment::MessageComplete(m) = m
+        {
+            break m;
         }
     };
 
@@ -447,13 +447,16 @@ async fn get_image(
     let image_model::Image { data, cost } = imgmod.get_image(&description).await?;
 
     Ok(Image {
-        caption: caption,
+        caption,
         description,
         cost,
         jpeg_bytes: data,
     })
 }
 
+// this is used a single time when pressing continue in the main menu
+// it's very short-lived, and I find this acceptable
+#[allow(clippy::large_enum_variant)]
 pub enum StartResultOrData {
     StartResult(AdvanceResult, TurnInput),
     Data(TurnData),

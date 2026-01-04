@@ -129,7 +129,7 @@ impl SaveArchive {
 
         self.file
             .seek(SeekFrom::Start(self.header.game_data_region_offset))?;
-        self.file.write_all(&json_bytes)?;
+        self.file.write_all(json_bytes)?;
 
         self.header.game_data_size = json_bytes.len() as u64;
         write_header(&mut self.file, &self.header)?;

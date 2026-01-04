@@ -175,7 +175,7 @@ impl<'a, ElemT, T: Into<Element<'a, ElemT>>> ElemHelper<'a, ElemT> for T {
 }
 
 fn italic_text(t: &str) -> iced::widget::Text<'_> {
-    iced::widget::text(t).font(italic_default_font()).into()
+    iced::widget::text(t).font(italic_default_font())
 }
 
 fn italic_default_font() -> Font {

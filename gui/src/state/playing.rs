@@ -34,6 +34,12 @@ enum EditorId {
     GMInstruction,
 }
 
+impl Default for Playing {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Playing {
     pub fn new() -> Self {
         Self {
@@ -238,8 +244,7 @@ impl State for Playing {
 
         text_col.push(
             markdown::view(&ctx.output_markdown, Theme::TokyoNight)
-                .map(|_| unreachable!())
-                .into(),
+                .map(|_| unreachable!()),
         );
 
         main_col.push(widget::column(text_col).spacing(20).into());
@@ -268,7 +273,7 @@ impl State for Playing {
                     ]
                 ]);
                 main_col.extend([
-                    below_output_buttons().into(),
+                    below_output_buttons(),
                     widget::column(elems)
                         .max_width(500)
                         .spacing(15)
