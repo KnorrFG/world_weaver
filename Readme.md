@@ -1,6 +1,6 @@
 # World Weaver
 
-World Weaver is an AI-Guided Choose your own Adventure game, also known as "Infinite World Game".
+World Weaver is an AI-Guided "Choose Your Own Adventure" game, also known as "Infinite Worlds Game".
 
 ![screenshot of world_weaver](doc/screen_short_turn1.png)
 
