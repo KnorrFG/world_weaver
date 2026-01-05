@@ -118,6 +118,8 @@ pub mod ui_messages {
             NewWorld,
             EditWorld(usize),
             StartWorld(usize),
+            DeleteWorld(usize),
+            ConfirmDeleteWorld(usize),
             Back,
         }
 
@@ -137,6 +139,8 @@ pub mod ui_messages {
 
         pub enum LoadMenu {
             Back,
+            DeleteSave(usize),
+            ConfirmDeleteSave(usize),
             LoadSave(usize),
         }
 

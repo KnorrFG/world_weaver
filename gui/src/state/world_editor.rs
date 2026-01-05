@@ -46,9 +46,7 @@ impl fmt::Debug for WorldEditor {
             .field(
                 "buttons",
                 &self
-                    .buttons
-                    .iter()
-                    .map(|(k, _)| (k, "<Closure>"))
+                    .buttons.keys().map(|k| (k, "<Closure>"))
                     .collect::<BTreeMap<_, _>>(),
             )
             .finish()
@@ -291,7 +289,7 @@ impl State for WorldEditor {
         );
 
         let mut button_row = vec![space::horizontal().into()];
-        for (bcaption, _) in &self.buttons {
+        for bcaption in self.buttons.keys() {
             button_row.push(
                 button(text(bcaption))
                     .on_press(MyMessage::Button(bcaption.clone()).into())

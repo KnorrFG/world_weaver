@@ -1,14 +1,9 @@
 Todos:
-	- add world export
 	
 other:
 	- game::send_to_llm is in urgent need of a refactor
 
 Missing features:
-
-	- exporting world from save
-	- edit/delete worlds
-	- delete saves
 
 Layout things to fix:
 

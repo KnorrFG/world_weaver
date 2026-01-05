@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use color_eyre::Result;
 use engine::game::WorldDescription;
@@ -11,7 +11,7 @@ use log::debug;
 use crate::{
     TryIntoExt, bold_text, elem_list, load_ron_file,
     message::ui_messages::WorldMenu as MyMessage,
-    state::{MainMenu, WorldEditor, cmd, start_new_game::StartNewGame},
+    state::{MainMenu, Modal, State, WorldEditor, cmd, start_new_game::StartNewGame},
     top_level_container, worlds_dir,
 };
 
@@ -19,7 +19,7 @@ const EXAMPLE_WORLD: &str = include_str!("../../../Neon_Shadows.ron");
 
 #[derive(Clone, Debug)]
 pub struct WorldMenu {
-    worlds: Vec<WorldDescription>,
+    worlds: Vec<(PathBuf, WorldDescription)>,
 }
 
 impl WorldMenu {
@@ -36,7 +36,7 @@ impl WorldMenu {
             .map(|p| {
                 let p = p?;
                 debug!("{:?}", p.path());
-                load_ron_file::<WorldDescription>(&p.path())
+                Ok((p.path(), load_ron_file::<WorldDescription>(&p.path())?))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -44,7 +44,7 @@ impl WorldMenu {
             "Loaded worlds:\n{}",
             worlds
                 .iter()
-                .map(|w| w.name.as_str())
+                .map(|w| w.1.name.as_str())
                 .collect::<Vec<_>>()
                 .join("\n")
         );
@@ -62,9 +62,20 @@ impl super::State for WorldMenu {
         use MyMessage::*;
         match msg {
             NewWorld => cmd::transition(WorldEditor::for_worlds_menu(None)),
-            StartWorld(i) => cmd::transition(StartNewGame::new(self.worlds[i].clone())),
-            EditWorld(i) => cmd::transition(WorldEditor::for_worlds_menu(Some(&self.worlds[i]))),
+            StartWorld(i) => cmd::transition(StartNewGame::new(self.worlds[i].1.clone())),
+            EditWorld(i) => cmd::transition(WorldEditor::for_worlds_menu(Some(&self.worlds[i].1))),
             Back => cmd::transition(MainMenu::try_new()?),
+            DeleteWorld(i) => cmd::transition(Modal::confirm(
+                State::clone(self),
+                "Do you really want to delete this world?",
+                Some(MyMessage::ConfirmDeleteWorld(i).into()),
+                None,
+            )),
+            ConfirmDeleteWorld(i) => {
+                let world = &self.worlds.remove(i);
+                fs::remove_file(&world.0)?;
+                cmd::none()
+            }
         }
     }
 
@@ -87,8 +98,9 @@ impl super::State for WorldMenu {
         for (i, world) in self.worlds.iter().enumerate() {
             tlc.push(
                 row![
-                    text(&world.name),
+                    text(&world.1.name),
                     space::horizontal(),
+                    button("delete").on_press(MyMessage::DeleteWorld(i).into()),
                     button("edit").on_press(MyMessage::EditWorld(i).into()),
                     button("start").on_press(MyMessage::StartWorld(i).into())
                 ]

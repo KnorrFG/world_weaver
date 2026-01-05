@@ -5,7 +5,6 @@ use std::{
 };
 
 use color_eyre::{Result, eyre::eyre};
-use engine::{game::Game, save_archive::SaveArchive};
 use iced::{
     Length,
     widget::{Space, button, column, row, space, text},
@@ -14,11 +13,10 @@ use log::debug;
 
 use crate::{
     TryIntoExt, active_game_save_path, bold_text,
-    context::game_context::GameContext,
     elem_list,
     message::ui_messages::LoadMenu as MyMessage,
     saves_dir,
-    state::{MainMenu, Playing, cmd},
+    state::{MainMenu, Modal, Playing, State, cmd},
     top_level_container,
 };
 
@@ -90,19 +88,21 @@ impl super::State for LoadMenu {
                 ctx.game = None;
                 let active_game_path = active_game_save_path()?;
                 fs::copy(&save.path, &active_game_path)?;
-                let mut archive = SaveArchive::open(&active_game_path)?;
-                let gd = archive.read_game_data()?;
-                let game = Game::load(
-                    ctx.config.get_llm(),
-                    ctx.config.get_image_model()?,
-                    gd,
-                    ctx.config.active_style().cloned(),
-                );
-                let game_ctx = GameContext::try_new(game, archive)?;
-                ctx.game = Some(game_ctx);
+                ctx.load_game()?;
                 cmd::transition(Playing::new())
             }
             Back => cmd::transition(MainMenu::try_new()?),
+            DeleteSave(i) => cmd::transition(Modal::confirm(
+                State::clone(self),
+                "Do you really want to delete this save?",
+                Some(MyMessage::ConfirmDeleteSave(i).into()),
+                None,
+            )),
+            ConfirmDeleteSave(i) => {
+                let save = &self.saves.remove(i);
+                fs::remove_file(&save.path)?;
+                cmd::none()
+            }
         }
     }
 
@@ -127,7 +127,8 @@ impl super::State for LoadMenu {
                 row![
                     column![text(&save.filename), text(time.to_string()).size(14)],
                     space::horizontal(),
-                    button("load").on_press(MyMessage::LoadSave(i).into())
+                    button("Delete").on_press(MyMessage::DeleteSave(i).into()),
+                    button("Load").on_press(MyMessage::LoadSave(i).into())
                 ]
                 .spacing(10)
                 .into(),
