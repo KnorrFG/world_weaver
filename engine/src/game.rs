@@ -206,7 +206,7 @@ impl Game {
     pub fn mk_summary_if_neccessary(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<OutputMessage>>> + Send + 'static>> {
-        let current_turn = self.data.turn_data.len() as isize - 1;
+        let current_turn = self.current_turn() as isize;
         let should_summarize = match self.data.summaries.last() {
             Some(s) => current_turn - s.bday as isize >= SUMMARY_INTERVAL as isize,
             None => current_turn >= SUMMARY_INTERVAL as isize,
@@ -735,6 +735,7 @@ impl TurnInput {
         user_message.push_str(&self.player_action);
         user_message.push_str("\n# gm command\n");
         user_message.push_str(&self.gm_instruction);
+        user_message.push_str("\nRespect the 1000 word limit for the output");
     }
 }
 

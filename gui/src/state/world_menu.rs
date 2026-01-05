@@ -11,7 +11,7 @@ use log::debug;
 use crate::{
     TryIntoExt, bold_text, elem_list, load_ron_file,
     message::ui_messages::WorldMenu as MyMessage,
-    state::{WorldEditor, cmd, start_new_game::StartNewGame},
+    state::{MainMenu, WorldEditor, cmd, start_new_game::StartNewGame},
     top_level_container, worlds_dir,
 };
 
@@ -61,8 +61,10 @@ impl super::State for WorldMenu {
         let msg: MyMessage = event.try_into_ex()?;
         use MyMessage::*;
         match msg {
-            NewWorld => cmd::transition(WorldEditor::for_worlds_menu()),
+            NewWorld => cmd::transition(WorldEditor::for_worlds_menu(None)),
             StartWorld(i) => cmd::transition(StartNewGame::new(self.worlds[i].clone())),
+            EditWorld(i) => cmd::transition(WorldEditor::for_worlds_menu(Some(&self.worlds[i]))),
+            Back => cmd::transition(MainMenu::try_new()?),
         }
     }
 
@@ -76,8 +78,10 @@ impl super::State for WorldMenu {
             row![
                 space::horizontal(),
                 button("New World").on_press(MyMessage::NewWorld.into()),
+                button("Back").on_press(MyMessage::Back.into()),
                 space::horizontal()
             ]
+            .spacing(10)
         ]);
 
         for (i, world) in self.worlds.iter().enumerate() {
@@ -85,8 +89,10 @@ impl super::State for WorldMenu {
                 row![
                     text(&world.name),
                     space::horizontal(),
+                    button("edit").on_press(MyMessage::EditWorld(i).into()),
                     button("start").on_press(MyMessage::StartWorld(i).into())
                 ]
+                .spacing(10)
                 .into(),
             );
         }

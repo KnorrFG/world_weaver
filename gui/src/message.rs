@@ -116,7 +116,9 @@ pub mod ui_messages {
 
         pub enum WorldMenu {
             NewWorld,
-            StartWorld(usize)
+            EditWorld(usize),
+            StartWorld(usize),
+            Back,
         }
 
         pub enum WorldEditor {
@@ -126,9 +128,7 @@ pub mod ui_messages {
             DescriptionUpdate(text_editor::Action),
             InitActionUpdate(text_editor::Action),
             NameUpdate(String),
-            Save,
-            SaveAndPlay,
-            Abort,
+            Button(String),
         }
 
         pub enum StartNewGame {

@@ -330,7 +330,7 @@ impl GameContext {
                 self.game.data.turn_data[*completed_turn].output.text = val.clone();
             }
             SubState::Complete(Complete { turn_data }) => {
-                turn_data.output.secret_info = val.clone();
+                turn_data.output.text = val.clone();
                 self.game.data.turn_data.last_mut().unwrap().output.text = val.clone();
             }
             other => bail!("Invalid substate when seeing UpdateHiddenInfo: {other:#?}",),

@@ -1,20 +1,15 @@
 Todos:
-	- when the llm violates the format, or the image generation fails,
-	  the gamectx is left in AwaitingOutput or whatever. Just resetting
-	  it isn't enough, because afterwards an image may come in. Or streaming
-	  may be continued after the image failed. So I probably want to
-	  attach an ID to these events, on error, reset the sub-state increase
-	  that ID, and ignore incoming stuff from the invalidated request.
+	- add world export
 	
 other:
 	- game::send_to_llm is in urgent need of a refactor
 
 Missing features:
 
-- exporting world from save
-- edit/delete worlds
-- delete saves
+	- exporting world from save
+	- edit/delete worlds
+	- delete saves
 
 Layout things to fix:
 
-- image caption is way too far away from the image
+	- image caption is way too far away from the image

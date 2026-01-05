@@ -33,9 +33,7 @@ pub struct WorldEditor {
     description: text_editor::Content,
     init_action: text_editor::Content,
     characters: BTreeMap<String, text_editor::Content>,
-    on_abort: Option<ActionFnArc>,
-    on_save: Option<ActionFnArc>,
-    on_save_and_play: Option<ActionFnArc>,
+    buttons: BTreeMap<String, ActionFnArc>,
 }
 
 impl fmt::Debug for WorldEditor {
@@ -45,11 +43,13 @@ impl fmt::Debug for WorldEditor {
             .field("description", &self.description)
             .field("init_action", &self.init_action)
             .field("characters", &self.characters)
-            .field("on_abort", &self.on_abort.as_ref().map(|_| "..."))
-            .field("on_save", &self.on_save.as_ref().map(|_| "..."))
             .field(
-                "on_save_and_play",
-                &self.on_save_and_play.as_ref().map(|_| "..."),
+                "buttons",
+                &self
+                    .buttons
+                    .iter()
+                    .map(|(k, _)| (k, "<Closure>"))
+                    .collect::<BTreeMap<_, _>>(),
             )
             .finish()
     }
@@ -66,47 +66,105 @@ impl WorldEditor {
                 .iter()
                 .map(|(k, v)| (k.clone(), text_editor::Content::with_text(v)))
                 .collect(),
-            on_abort: san(|_, _| cmd::transition(MainMenu::try_new()?)),
-            on_save: san(|this, ctx| {
-                this.try_save_world_to_context(ctx)?;
-                cmd::transition(Modal::message(
-                    State::clone(this),
-                    "Info",
-                    "Saving succesful",
-                ))
-            }),
-            on_save_and_play: san(|this, ctx| {
-                this.try_save_world_to_context(ctx)?;
-                cmd::transition(Playing::new())
-            }),
+            buttons: [
+                (
+                    "Abort".to_string(),
+                    an(|_, _| cmd::transition(MainMenu::try_new()?)),
+                ),
+                (
+                    "Save".to_string(),
+                    an(|this, ctx| {
+                        this.try_save_world_to_context(ctx)?;
+                        cmd::transition(Modal::message(
+                            State::clone(this),
+                            "Info",
+                            "Saving succesful",
+                        ))
+                    }),
+                ),
+                (
+                    "Save and Play".to_string(),
+                    an(|this, ctx| {
+                        this.try_save_world_to_context(ctx)?;
+                        cmd::transition(Playing::new())
+                    }),
+                ),
+                (
+                    "Export to File".to_string(),
+                    an(|this, _| {
+                        this.try_save_world(true)?;
+                        cmd::transition(Modal::message(
+                            State::clone(this),
+                            "Info",
+                            "Saving succesful",
+                        ))
+                    }),
+                ),
+            ]
+            .into(),
         }
     }
 
-    pub fn for_worlds_menu() -> Self {
-        Self {
-            name: "".into(),
-            description: text_editor::Content::default(),
-            init_action: text_editor::Content::default(),
-            characters: BTreeMap::new(),
-            on_abort: san(|_, _| cmd::transition(WorldMenu::try_new()?)),
-            on_save: san(|this, _| {
-                this.try_save_world()?;
-                cmd::transition(Modal::message(
-                    State::clone(this),
-                    "Info",
-                    "Saving succesful",
-                ))
-            }),
-            on_save_and_play: san(|this, _| {
-                let world = this.try_save_world()?;
-                cmd::transition(StartNewGame::new(world))
-            }),
+    pub fn for_worlds_menu(world: Option<&WorldDescription>) -> Self {
+        // if wold_is some, we're editing an exisiting world,
+        // and overwriting is OK, if it's none, we edit a new
+        // world, and overwriting is not ok
+        let exists_ok = world.is_some();
+        let buttons = [
+            (
+                "Abort".to_string(),
+                an(|_, _| cmd::transition(WorldMenu::try_new()?)),
+            ),
+            (
+                "Save".to_string(),
+                an(move |this, _| {
+                    this.try_save_world(exists_ok)?;
+                    cmd::transition(Modal::message(
+                        State::clone(this),
+                        "Info",
+                        "Saving succesful",
+                    ))
+                }),
+            ),
+            (
+                "Save and Play".to_string(),
+                an(move |this, _| {
+                    let world = this.try_save_world(exists_ok)?;
+                    cmd::transition(StartNewGame::new(world))
+                }),
+            ),
+        ]
+        .into();
+
+        if let Some(wd) = world {
+            Self {
+                name: wd.name.clone(),
+                description: text_editor::Content::with_text(&wd.main_description),
+                init_action: text_editor::Content::with_text(&wd.init_action),
+                characters: wd
+                    .pc_descriptions
+                    .iter()
+                    .map(|(k, v)| (k.clone(), text_editor::Content::with_text(v)))
+                    .collect(),
+                buttons,
+            }
+        } else {
+            Self {
+                name: "".into(),
+                description: text_editor::Content::default(),
+                init_action: text_editor::Content::default(),
+                characters: BTreeMap::new(),
+                buttons,
+            }
         }
     }
 
-    fn try_save_world(&self) -> Result<WorldDescription> {
+    fn try_save_world(&self, exists_ok: bool) -> Result<WorldDescription> {
         let path = self.current_save_path()?;
-        ensure!(!path.exists(), "A world with that name alread exists");
+        ensure!(
+            exists_ok || !path.exists(),
+            "A world with that name alread exists"
+        );
         let world = self.mk_world();
         fs::create_dir_all(path.parent().unwrap())?;
         save_ron_file(&path, &world)?;
@@ -178,20 +236,14 @@ impl State for WorldEditor {
                 self.init_action.perform(a);
                 cmd::none()
             }
-            Save => (self
-                .on_save
-                .clone()
-                .ok_or(eyre!("Save called but no on_save"))?)(self, ctx),
-            SaveAndPlay => (self
-                .on_save_and_play
-                .clone()
-                .ok_or(eyre!("SaveAndPlay called but no on_save_and_play"))?)(
-                self, ctx
-            ),
-            Abort => (self
-                .on_abort
-                .clone()
-                .ok_or(eyre!("Abort called but no on_abort"))?)(self, ctx),
+            Button(which) => {
+                let handler = self
+                    .buttons
+                    .get(&which)
+                    .ok_or(eyre!("No such button: {which}"))?
+                    .clone();
+                handler(self, ctx)
+            }
         }
     }
 
@@ -239,19 +291,14 @@ impl State for WorldEditor {
         );
 
         let mut button_row = vec![space::horizontal().into()];
-        if self.on_abort.is_some() {
-            button_row.push(button("Abort").on_press(MyMessage::Abort.into()).into());
-        }
-        if self.on_save.is_some() {
-            button_row.push(button("Save").on_press(MyMessage::Save.into()).into());
-        }
-        if self.on_save_and_play.is_some() {
+        for (bcaption, _) in &self.buttons {
             button_row.push(
-                button("Save and Play")
-                    .on_press(MyMessage::SaveAndPlay.into())
+                button(text(bcaption))
+                    .on_press(MyMessage::Button(bcaption.clone()).into())
                     .into(),
             );
         }
+
         button_row.push(space::horizontal().into());
         tlc.push(row(button_row).spacing(10).width(Length::Fill).into());
 
@@ -269,10 +316,10 @@ impl State for WorldEditor {
     }
 }
 
-/// some-arc-new
-fn san<F>(f: F) -> Option<ActionFnArc>
+/// arc-new
+fn an<F>(f: F) -> ActionFnArc
 where
     F: Fn(&mut WorldEditor, &mut Context) -> Result<StateCommand> + Send + Sync + 'static,
 {
-    Some(Arc::new(f))
+    Arc::new(f)
 }
