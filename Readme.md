@@ -63,12 +63,6 @@ a second:
 
 ## For Devs
 
-There are a few features missing I simply don't need myself:
-
-- exporting a world from a running game
-- edit/delete worlds
-- delete saves
-
 I'm open for PRs, but I also reserve the right to reject them if I dislike them.
 If you want to make a PR, take a look at the [Architecture](doc/architecture.md) first.
 And make sure the tests pass, CIs are a huge PITA, but I'll run the tests manually.
