@@ -65,4 +65,4 @@ a second:
 
 I'm open for PRs, but I also reserve the right to reject them if I dislike them.
 If you want to make a PR, take a look at the [Architecture](doc/architecture.md) first.
-And make sure the tests pass, CIs are a huge PITA, but I'll run the tests manually.
+And make sure the tests pass, it's not worth setting up a CI for this, but I'll run the tests manually.
