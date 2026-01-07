@@ -306,9 +306,9 @@ async fn create_new_summary(
 
             You will receive:
             - The previous summary (if it exists)
-            - A sequence of rounds since that summary
+            - A sequence of turns since that summary
 
-            Each round is represented as:
+            Each turn is represented as:
 
             START EXAMPLE
             # player action
@@ -321,7 +321,7 @@ async fn create_new_summary(
             * The secret Info generated for the output*
             END EXAMPLE
 
-            Rounds are separated by the delimiter:
+            Turns are separated by the delimiter:
             ---
 
             TASK:
@@ -364,13 +364,13 @@ async fn create_new_summary(
                 gm_instruction,
             } = &t.input;
             indoc::formatdoc! {
-                "# player action
+                "## player action
                 {}
-                # gm command
+                ## gm command
                 {}
-                # assistant output
+                ## assistant output
                 {}
-                # secret info
+                ## secret info
                 {}", player_action,
                gm_instruction,
                t.output.text,
@@ -387,6 +387,10 @@ async fn create_new_summary(
             # Turns to summarize
 
             {}
+
+            # Instructions
+
+            Use the old summary (if it exists) and the provided turns to create a new summary
         "#, term_strs.join("\n---\n")};
 
     debug!("Sending summary request - system msg:\n{system_message}");
@@ -520,11 +524,11 @@ impl GameData {
            --- START EXAMPLE ---
            *The image description* will be passed to an image model to generate an image.
            Unless the most important part of the current turn is a special place, scenery or
-           object, the image should show a character that is currently important.
+           object, the image should show a single character that is currently important.
            <<<EOID>>>
            *A short image caption* will be displayed below the image 1-5 words
            <<<EOIC>>>
-           *The output*: text that is displayed to me, this should be between 300 and 1500 words at most
+           *The output*: text that is displayed to me, this should be between 300 and 1000 words at most
            No need for characters to hold endless monologues.
            <<<EOO>>>
            *Secret info*:. Stuff that is related to output, but hidden from me,
