@@ -8,7 +8,7 @@ use engine::{
     ImgModBox, LLMBox,
     game::Game,
     image_model::{self, Model, ModelStyle},
-    llm::Claude,
+    llm::{self},
     save_archive::SaveArchive,
 };
 use iced::Task;
@@ -16,7 +16,7 @@ use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CLAUDE_MODEL, active_game_save_path,
+    active_game_save_path,
     context::game_context::GameContext,
     message::{ContextMessage, Message},
 };
@@ -53,7 +53,7 @@ impl Context {
         let mut archive = SaveArchive::open(save_path)?;
         let game_data = archive.read_game_data()?;
         let game = Game::load(
-            self.config.get_llm(),
+            self.config.get_llm()?,
             self.config.get_image_model()?,
             game_data,
             self.config.active_style().cloned(),
@@ -65,9 +65,10 @@ impl Context {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Config {
-    pub claude_token: String,
     pub current_img_model: image_model::ProvidedModel,
+    pub current_llm: llm::ProvidedModel,
     pub img_model_tokens: BTreeMap<image_model::ModelProvider, String>,
+    pub llm_tokens: BTreeMap<llm::ModelProvider, String>,
     pub active_model_style: BTreeMap<image_model::Model, String>,
     pub styles: BTreeMap<StyleKey, ModelStyle>,
 }
@@ -79,8 +80,13 @@ pub struct StyleKey {
 }
 
 impl Config {
-    pub fn get_llm(&self) -> LLMBox {
-        Box::new(Claude::new(self.claude_token.clone(), CLAUDE_MODEL.into()))
+    pub fn get_llm(&self) -> Result<LLMBox> {
+        let model = self.current_llm;
+        let key = self
+            .llm_tokens
+            .get(&model.provider())
+            .ok_or(eyre!("No token for {model:?}"))?;
+        Ok(model.make(key.clone()))
     }
 
     pub fn get_image_model(&self) -> Result<ImgModBox> {

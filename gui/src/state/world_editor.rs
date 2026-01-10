@@ -46,7 +46,9 @@ impl fmt::Debug for WorldEditor {
             .field(
                 "buttons",
                 &self
-                    .buttons.keys().map(|k| (k, "<Closure>"))
+                    .buttons
+                    .keys()
+                    .map(|k| (k, "<Closure>"))
                     .collect::<BTreeMap<_, _>>(),
             )
             .finish()

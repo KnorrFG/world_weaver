@@ -1,26 +1,34 @@
 use std::io::{Write, stdout};
 
-use color_eyre::{Result, eyre::eyre};
-use engine::llm::{Claude, InputMessage, LLM, Request, ResponseFragment, Role};
+use clap::Parser;
+use color_eyre::Result;
+use engine::{
+    llm::ProvidedModel,
+    llm::{InputMessage, Request, ResponseFragment, Role},
+};
 use tokio::pin;
 use tokio_stream::StreamExt;
 
+#[derive(clap::Parser)]
+pub struct Cli {
+    api_key: String,
+    model: ProvidedModel,
+    max_tokens: usize,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = Cli::parse();
     pretty_env_logger::init();
     color_eyre::install().unwrap();
 
-    let token = std::env::args()
-        .nth(1)
-        .ok_or(eyre!("Need token as first cli arg"))?;
-
-    let mut claude = Claude::new(token, "claude-sonnet-4-5".into());
-    let stream = claude.send_request_stream(Request {
+    let mut model = args.model.make(args.api_key);
+    let stream = model.send_request_stream(Request {
         messages: vec![InputMessage {
             role: Role::User,
             content: "Explain Rust futures by going way too deep".into(),
         }],
-        max_tokens: 300,
+        max_tokens: args.max_tokens,
         system: None,
     });
 

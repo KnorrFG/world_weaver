@@ -143,7 +143,8 @@ fn extract_image_url(output: &serde_json::Value) -> Result<&str> {
     match output {
         serde_json::Value::String(url) => Ok(url),
 
-        serde_json::Value::Array(arr) => Ok(arr.first()
+        serde_json::Value::Array(arr) => Ok(arr
+            .first()
             .ok_or_else(|| eyre!("Empty output array"))?
             .as_str()
             .ok_or(eyre!("unexpected json"))?),

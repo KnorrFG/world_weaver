@@ -111,7 +111,10 @@ impl GameContext {
 
                 let Ok(output) = $invar else {
                     self.current_generation += 1;
-                    self.load_completed_turn(self.current_turn() - 1)?;
+                    let turn = self.current_turn();
+                    if turn > 0 {
+                        self.load_completed_turn(self.current_turn() - 1)?;
+                    }
                     bail!(indoc::formatdoc! {"
                         There was an error with the LLM response or the image model.
                         This can happen. Try again.
@@ -170,6 +173,9 @@ impl GameContext {
                     output: _,
                     image,
                 } = self.sub_state.take().try_into_ex()?;
+
+                self.output_text = output.text.clone();
+                self.output_markdown = markdown::parse(&self.output_text).collect();
 
                 if let Some(image) = image {
                     self.request_summary(input, output, image)

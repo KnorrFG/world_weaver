@@ -1,10 +1,7 @@
 use std::time::Duration;
 
 use async_stream::try_stream;
-use color_eyre::{
-    Result,
-    eyre::eyre,
-};
+use color_eyre::{Result, eyre::eyre};
 use log::info;
 use reqwest::header::{self, HeaderValue};
 use serde::{Deserialize, Serialize};

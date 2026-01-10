@@ -31,7 +31,7 @@ impl StartNewGame {
 
     fn create_game(&self, c: String, config: &Config) -> Result<Game> {
         Game::try_new(
-            config.get_llm(),
+            config.get_llm()?,
             config.get_image_model()?,
             self.world.clone(),
             c,

@@ -12,8 +12,7 @@ use iced::{
 use log::debug;
 
 use crate::{
-    TryIntoExt, active_game_save_path, bold_text,
-    elem_list,
+    TryIntoExt, active_game_save_path, bold_text, elem_list,
     message::ui_messages::LoadMenu as MyMessage,
     saves_dir,
     state::{MainMenu, Modal, Playing, State, cmd},

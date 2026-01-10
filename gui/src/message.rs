@@ -145,9 +145,10 @@ pub mod ui_messages {
         }
 
         pub enum OptionsMenu {
-            ClaudeTokenChanged(String),
             ImgModelTokenChanged(image_model::ModelProvider, String),
+            LLMTokenChanged(llm::ModelProvider, String),
             SelectImageModel(image_model::ProvidedModel),
+            SelectLLM(llm::ProvidedModel),
             SelectStyle(usize),
             UnselectStyle(image_model::Model),
             EditStylePrefix(usize, text_editor::Action),

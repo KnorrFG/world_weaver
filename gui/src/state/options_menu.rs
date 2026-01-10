@@ -16,7 +16,10 @@ use crate::{
     state::{MainMenu, Modal, State, cmd},
     top_level_container,
 };
-use engine::image_model::{self, Model, ModelStyle};
+use engine::{
+    image_model::{self, Model, ModelStyle},
+    llm,
+};
 
 #[derive(Debug, Clone, Default)]
 struct StyleEntry {
@@ -66,8 +69,8 @@ impl State for OptionsMenu {
 
         use MyMessage::*;
         match msg {
-            ClaudeTokenChanged(val) => {
-                ctx.config.claude_token = val;
+            LLMTokenChanged(provider, token) => {
+                ctx.config.llm_tokens.insert(provider, token);
                 cmd::none()
             }
             ImgModelTokenChanged(provider, val) => {
@@ -118,6 +121,7 @@ impl State for OptionsMenu {
                 if let Some(gctx) = &mut ctx.game {
                     gctx.game.imgmod = ctx.config.get_image_model()?;
                     gctx.game.img_style = ctx.config.active_style().cloned();
+                    gctx.game.llm = ctx.config.get_llm()?;
                 }
                 cmd::transition(MainMenu::try_new()?)
             }
@@ -131,6 +135,10 @@ impl State for OptionsMenu {
                 ctx.config.active_model_style.remove(&model);
                 cmd::none()
             }
+            SelectLLM(provided_model) => {
+                ctx.config.current_llm = provided_model;
+                cmd::none()
+            }
         }
     }
 
@@ -139,14 +147,40 @@ impl State for OptionsMenu {
         ctx: &'a crate::context::Context,
     ) -> iced::Element<'a, crate::message::UiMessage> {
         let mut items = Vec::from(elem_list![
-            bold_text("Options").width(Length::Fill).center(),
+            bold_text("Options").size(26).width(Length::Fill).center(),
             space().height(20),
-            text("Anthropic (Claude) API Key"),
-            text_input("sk-ant-...", &ctx.config.claude_token,)
-                .on_input(|s| MyMessage::ClaudeTokenChanged(s).into())
-                .width(Length::Fill),
+            bold_text("LLM Provider API Keys").size(22),
+        ]);
+
+        for provider in llm::ModelProvider::iter() {
+            let value = ctx
+                .config
+                .llm_tokens
+                .get(&provider)
+                .map(String::as_str)
+                .unwrap_or("");
+
+            items.push(text(format!("{provider}")).into());
+            items.push(
+                text_input("API token", value)
+                    .on_input(move |s| MyMessage::LLMTokenChanged(provider, s).into())
+                    .width(Length::Fill)
+                    .into(),
+            );
+        }
+
+        items.extend(elem_list![
             space().height(20),
-            text("Active Image Model"),
+            bold_text("Active LLM").size(22),
+            column(llm::ProvidedModel::iter().map(|m| {
+                radio(format!("{m}"), m, Some(ctx.config.current_llm), |m| {
+                    MyMessage::SelectLLM(m).into()
+                })
+                .into()
+            }))
+            .spacing(10),
+            space().height(20),
+            bold_text("Active Image Model").size(22),
             column(image_model::ProvidedModel::iter().map(|m| {
                 radio(format!("{m}"), m, Some(ctx.config.current_img_model), |m| {
                     MyMessage::SelectImageModel(m).into()
@@ -155,7 +189,7 @@ impl State for OptionsMenu {
             }))
             .spacing(10),
             space().height(20),
-            bold_text("Image Model API Keys")
+            bold_text("Image Model API Keys").size(22)
         ]);
 
         for provider in image_model::ModelProvider::iter() {

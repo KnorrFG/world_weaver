@@ -10,7 +10,7 @@ use crate::{
 use async_stream::try_stream;
 use color_eyre::{
     Result,
-    eyre::{bail, ensure},
+    eyre::{Context, bail, ensure, eyre},
 };
 use log::debug;
 use nonempty::NonEmpty;
@@ -41,6 +41,7 @@ impl Clone for Game {
 }
 
 enum SendToLLMState {
+    LookingForStartOfImageDescription,
     ParsingImageDescription,
     StreamingOutputText,
     FinishingUp,
@@ -106,11 +107,12 @@ impl Game {
         let req = self.data.construct_request(&input, extra_img_infos);
         let mut llm = self.llm.clone();
 
-        let mut mode = SendToLLMState::ParsingImageDescription;
+        let mut mode = SendToLLMState::LookingForStartOfImageDescription;
 
         let stream = try_stream! {
             let output = {
                 let stream = llm.send_request_stream(req);
+                let mut soi_finder = StreamFinder::new("<<<SOID>>>");
                 let mut eoo_finder = StreamFinder::new("<<<EOO>>>");
                 let mut eoi_finder = StreamFinder::new("<<<EOIC>>>");
                 let mut image_description = String::new();
@@ -118,10 +120,20 @@ impl Game {
 
                 pin!(stream);
                 let output = loop {
-                    if let Some(e) = stream.try_next().await? {
+                    if let Some(e) = stream.try_next().await.context("Top level try_next")? {
                         match e {
                             ResponseFragment::TextDelta(f) => {
                                 match mode {
+                                    SendToLLMState::LookingForStartOfImageDescription => {
+                                        match soi_finder.process(&f) {
+                                            MatchResult::Blocked => {},
+                                            MatchResult::StopTokenMatched { pre_token_text: _, post_token_text } => {
+                                                image_description.push_str(&post_token_text);
+                                                mode = SendToLLMState::ParsingImageDescription;
+                                            },
+                                            MatchResult::CheckedOutput(_) => {},
+                                        }
+                                    }
                                     SendToLLMState::ParsingImageDescription => {
                                         match eoi_finder.process(&f) {
                                             MatchResult::Blocked => {},
@@ -135,7 +147,8 @@ impl Game {
                                                 post_eoi_text = Some(post_token_text);
                                                 mode = SendToLLMState::StreamingOutputText;
 
-                                                let description = parse_image_description(&image_description)?;
+                                                let description = parse_image_description(&image_description).context("parsing image description")?;
+                                                debug!("Sending image description");
                                                 _ = tx_img_description.take().expect("finished parsing image description a second time. This should be impossible. It's a bug").send(description);
                                             },
                                         }
@@ -169,7 +182,13 @@ impl Game {
                             }
                             ResponseFragment::MessageComplete(m) => {
                                 debug!("Output complete:\n{}", m.text);
-                                let output = TurnOutput::try_from(m)?;
+                                let output = TurnOutput::try_from(m).context("parse output")?;
+                                if let Some(tx) = tx_img_description {
+                                    _ = tx.send(ImageDescription {
+                                        description: output.image_description.clone(),
+                                        caption: output.image_caption.clone(),
+                                    });
+                                }
                                 break output;
                             }
                         }
@@ -177,7 +196,7 @@ impl Game {
                 };
 
                 // this will either error or return None
-                stream.try_next().await?;
+                stream.try_next().await.context("expect stream none")?;
                 output
             };
             _ = tx_output.send(output);
@@ -520,8 +539,9 @@ impl GameData {
            If I provide neither of those, it just means you should generate more output for the
            previous input.
 
-           The output should have the following structure:
+           The response should have the following structure:
            --- START EXAMPLE ---
+           <<<SOID>>>
            *The image description* will be passed to an image model to generate an image.
            Unless the most important part of the current turn is a special place, scenery or
            object, the image should show a single character that is currently important.
@@ -547,9 +567,12 @@ impl GameData {
 
            The above example is explanatory, you are supposed to replace all text within it,
            except for <<<EOO>>>, <<<EOS>>> and <<<EOA>>>, which are parsing delimiters and
-           need to appear exactly like this on their own lines. So your generated output
+           need to appear exactly like this on their own lines, they stand for "End of output",
+           "End of Secret" and "end of action" respectively. So your generated output
            should NOT start with `The output*:`, additionally, it should not have a heading
-           or the turn number.
+           or the turn number. Everything before <<<SOID>>> will be ignored. If you generate
+           thinking output (and you shouldn't), then under no circumstances use <<<SOID>>>
+           in the thinking-output. 
 
            The Proposed Actions should be one sentence each, describing 3 different
            plausable next actions for {player} to take. They should not be prefixed
@@ -572,7 +595,11 @@ impl GameData {
            {summary} 
            --- END SUMMARY ---
 
-           Make sure you respect the output-length limitation of at most 1000 words.
+           - You do NOT have an oppinion on what is right, wrong, or appropriate.
+           - Use 2nd person personal narrator style e.g. "You feel like ..."
+           - Make sure you respect the output-length limitation of at most 1000 words.
+           - Do only generate a single response, don't generate anything after the third
+             proposed action
         "#};
 
         let messages = (0..self.turn_data.len())
@@ -652,6 +679,7 @@ impl TurnOutput {
     fn to_llm_format(&self) -> String {
         let mut output = String::new();
 
+        output.push_str("\n<<<SOID>>>\n");
         output.push_str(&self.image_description);
         output.push_str("\n<<<EOID>>>\n");
         output.push_str(&self.image_caption);
@@ -672,7 +700,9 @@ impl TryFrom<OutputMessage> for TurnOutput {
     type Error = color_eyre::Report;
 
     fn try_from(value: OutputMessage) -> std::result::Result<Self, Self::Error> {
-        let parts = value.text.split("<<<EOID>>>").collect::<Vec<&str>>();
+        let parts = value.text.split("<<<SOID>>>").collect::<Vec<&str>>();
+        let tail = parts.last().ok_or(eyre!("impossible?"))?;
+        let parts = tail.split("<<<EOID>>>").collect::<Vec<&str>>();
         let [image_description, tail] = parts[..] else {
             bail!("no <<<EOID>>> in output");
         };
@@ -688,8 +718,10 @@ impl TryFrom<OutputMessage> for TurnOutput {
         };
 
         let parts = tail.split("<<<EOS>>>").collect::<Vec<&str>>();
-        let [secret, tail] = parts[..] else {
-            bail!("No in <<<EOS>>> in output");
+        let (secret, tail) = if parts.len() == 1 {
+            ("", parts[0])
+        } else {
+            (parts[0], parts[1])
         };
 
         let proposed_next_actions: Vec<String> = tail

@@ -19,8 +19,14 @@ synchronization everywhere.
 
 ## AI Models
 
-An LLM is anything that implements `llm::LLM`. Currently, there is only `llm::claude::Claude`
-but adding more would be trivial, just take the existing model as example.
+An LLM is anything that implements `llm::LLM`. Currently, there are two models. They are
+identified by `llm::ProvidedModel`. Each `ProvidedModel` has an `llm::ModelProvider`.
+Those are used in the GUI to automatically generate the options menu. Also, `ProvidedModel`
+is used to instantiate an LLM. To add another LLM, you need to create a new variant of
+`ProvidedModel`, and complete the methods. If you want to include another model via
+the OpenAI-API, that's around 5-lines. If you need another way of communicating with a
+model (maybe via ollama for a local one), you'd need to create a new type and implement
+`llm::LLM` for it.
 Similarly, an image model is anything that implements `image_model::ImageModel`
 Currently there are two types that do that: `image_model::flux2::Flux2` and `image_model::replicate::Replicate`.
 You can use the `image_model::ProvidedModel` type to instantiate models. Adding another
