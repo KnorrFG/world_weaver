@@ -1,5 +1,25 @@
 Todos:
 	
+	this is the error that occurs occasionally after the output is already complete:
+
+		There was an error with the LLM response or the image model.
+		This can happen. Try again.
+		If it repeats, try doing something else, if you're on Flux2, try Flux1.
+		Details:
+		Err(Top level try_next
+
+		Caused by:
+		   0: error decoding response body
+		   1: request or response body error
+		   2: error reading a body from connection
+		   3: Connection reset by peer (os error 104)
+
+		Location:
+		    engine/src/llm/claude/claude_api.rs:39:5)
+
+		Location:
+		    gui/src/context/game_context.rs:220:25
+
 other:
 	- game::send_to_llm is in urgent need of a refactor
 
@@ -8,3 +28,4 @@ Missing features:
 Layout things to fix:
 
 	- image caption is way too far away from the image
+

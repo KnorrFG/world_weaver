@@ -84,8 +84,10 @@ pub enum ModelProvider {
 )]
 pub enum ProvidedModel {
     #[default]
-    #[strum(to_string = "Claude (Anthropic)")]
+    #[strum(to_string = "Claude Sonette (Anthropic)")]
     ClaudeSonette45,
+    #[strum(to_string = "Claude Haiku (Anthropic)")]
+    ClaudeHaiku45,
     #[strum(to_string = "Aion-1.0 (openrouter.ai)")]
     Aion1Openr,
 }
@@ -95,6 +97,9 @@ impl ProvidedModel {
         match self {
             ProvidedModel::ClaudeSonette45 => {
                 Box::new(Claude::new(api_key, "claude-sonnet-4-5".into()))
+            }
+            ProvidedModel::ClaudeHaiku45 => {
+                Box::new(Claude::new(api_key, "claude-haiku-4-5".into()))
             }
             ProvidedModel::Aion1Openr => Box::new(OpenAIChat::new(
                 api_key,
@@ -107,6 +112,7 @@ impl ProvidedModel {
     pub fn provider(self) -> ModelProvider {
         match self {
             ProvidedModel::ClaudeSonette45 => ModelProvider::Anthropic,
+            ProvidedModel::ClaudeHaiku45 => ModelProvider::Anthropic,
             ProvidedModel::Aion1Openr => ModelProvider::Openrouter,
         }
     }
