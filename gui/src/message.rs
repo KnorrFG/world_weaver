@@ -127,6 +127,7 @@ pub mod ui_messages {
             AddCharacterButton,
             AddCharacter(String),
             UpdateCharacter(String, text_editor::Action),
+            UpdateCharacterInitAction(String, text_editor::Action),
             DescriptionUpdate(text_editor::Action),
             InitActionUpdate(text_editor::Action),
             NameUpdate(String),

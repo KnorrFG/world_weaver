@@ -17,7 +17,7 @@ use color_eyre::{
     Result,
     eyre::{bail, ensure, eyre},
 };
-use engine::game::WorldDescription;
+use engine::game::{PcDescription, WorldDescription};
 use iced::{
     Font, Length, Task,
     widget::{Space, button, column, container, row, rule, space, text, text_editor, text_input},
@@ -32,8 +32,14 @@ pub struct WorldEditor {
     name: String,
     description: text_editor::Content,
     init_action: text_editor::Content,
-    characters: BTreeMap<String, text_editor::Content>,
+    characters: BTreeMap<String, CharacterInputs>,
     buttons: BTreeMap<String, ActionFnArc>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CharacterInputs {
+    description: text_editor::Content,
+    initial_action: text_editor::Content,
 }
 
 impl fmt::Debug for WorldEditor {
@@ -64,7 +70,15 @@ impl WorldEditor {
             characters: wd
                 .pc_descriptions
                 .iter()
-                .map(|(k, v)| (k.clone(), text_editor::Content::with_text(v)))
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        CharacterInputs {
+                            description: text_editor::Content::with_text(&v.description),
+                            initial_action: text_editor::Content::with_text(&v.initial_action),
+                        },
+                    )
+                })
                 .collect(),
             buttons: [
                 (
@@ -144,7 +158,15 @@ impl WorldEditor {
                 characters: wd
                     .pc_descriptions
                     .iter()
-                    .map(|(k, v)| (k.clone(), text_editor::Content::with_text(v)))
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            CharacterInputs {
+                                description: text_editor::Content::with_text(&v.description),
+                                initial_action: text_editor::Content::with_text(&v.initial_action),
+                            },
+                        )
+                    })
                     .collect(),
                 buttons,
             }
@@ -178,7 +200,15 @@ impl WorldEditor {
             pc_descriptions: self
                 .characters
                 .iter()
-                .map(|(k, v)| (k.clone(), v.text()))
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        PcDescription {
+                            description: v.description.text(),
+                            initial_action: v.initial_action.text(),
+                        },
+                    )
+                })
                 .collect(),
             init_action: self.init_action.text(),
         }
@@ -213,14 +243,22 @@ impl State for WorldEditor {
                 |x| Task::done(MyMessage::AddCharacter(x).into()),
             )),
             AddCharacter(name) => {
-                self.characters
-                    .insert(name, text_editor::Content::default());
+                self.characters.insert(name, CharacterInputs::default());
                 cmd::none()
             }
             UpdateCharacter(name, a) => {
                 self.characters
                     .get_mut(&name)
                     .ok_or(eyre!("Character name invalid"))?
+                    .description
+                    .perform(a);
+                cmd::none()
+            }
+            UpdateCharacterInitAction(name, a) => {
+                self.characters
+                    .get_mut(&name)
+                    .ok_or(eyre!("Character name invalid"))?
+                    .initial_action
                     .perform(a);
                 cmd::none()
             }
@@ -263,26 +301,30 @@ impl State for WorldEditor {
                 .center(),
         ]);
 
-        let char_col = self
-            .characters
-            .iter()
-            .map(|(name, content)| {
-                column![
-                    text(name)
-                        .font(Font {
-                            weight: iced::font::Weight::Semibold,
-                            ..Font::DEFAULT
-                        })
-                        .size(16),
-                    text_editor(content)
-                        .on_action(|a| MyMessage::UpdateCharacter(name.clone(), a).into()),
-                ]
-                .spacing(10)
-                .into()
-            })
-            .chain([button("Add Character")
-                .on_press(MyMessage::AddCharacterButton.into())
-                .into()]);
+        let char_col =
+            self.characters
+                .iter()
+                .map(|(name, content)| {
+                    column![
+                        text(name)
+                            .font(Font {
+                                weight: iced::font::Weight::Semibold,
+                                ..Font::DEFAULT
+                            })
+                            .size(16),
+                        text_editor(&content.description)
+                            .on_action(|a| MyMessage::UpdateCharacter(name.clone(), a).into()),
+                        text("Initial Action:"),
+                        text_editor(&content.initial_action).on_action(|a| {
+                            MyMessage::UpdateCharacterInitAction(name.clone(), a).into()
+                        }),
+                    ]
+                    .spacing(10)
+                    .into()
+                })
+                .chain([button("Add Character")
+                    .on_press(MyMessage::AddCharacterButton.into())
+                    .into()]);
 
         tlc.push(
             container(column(char_col).spacing(20))

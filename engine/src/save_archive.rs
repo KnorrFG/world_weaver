@@ -244,6 +244,8 @@ fn write_header(file: &mut File, header: &SaveHeader) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::game::PcDescription;
+
     use super::*;
     use nonempty::nonempty;
     use std::collections::BTreeMap;
@@ -251,7 +253,13 @@ mod tests {
 
     fn make_sample_game_data(turns: usize) -> GameData {
         let mut pc_descriptions = BTreeMap::new();
-        pc_descriptions.insert("Alice".to_string(), "A brave warrior".to_string());
+        pc_descriptions.insert(
+            "Alice".to_string(),
+            PcDescription {
+                description: "A brave warrior".to_string(),
+                initial_action: "".into(),
+            },
+        );
 
         let world_description = crate::game::WorldDescription {
             main_description: "A fantasy world with dragons".to_string(),

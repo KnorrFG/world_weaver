@@ -74,7 +74,7 @@ impl State for StartNewGame {
                         ..Font::DEFAULT
                     })
                     .size(16),
-                text(description),
+                text(&description.description),
                 button("Select").on_press(MyMessage::Selected(name.clone()).into())
             ]);
         }

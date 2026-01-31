@@ -291,7 +291,15 @@ impl Game {
         if let Some(turn) = self.data.turn_data.last() {
             StartResultOrData::Data(turn.clone())
         } else {
-            let input = TurnInput::player_action(self.data.world_description.init_action.clone());
+            let pc_init_action = self.data.world_description.pc_descriptions[&self.data.pc]
+                .initial_action
+                .trim();
+            let init_action = if pc_init_action.is_empty() {
+                &self.data.world_description.init_action
+            } else {
+                pc_init_action
+            };
+            let input = TurnInput::player_action(init_action.into());
             StartResultOrData::StartResult(self.send_to_llm(input.clone()), input)
         }
     }
@@ -493,7 +501,7 @@ impl GameData {
     fn construct_request(&self, input: &TurnInput, image_gen_extra_infos: &str) -> Request {
         let player = &self.pc;
         let world_description = &self.world_description.main_description;
-        let pc_description = &self.world_description.pc_descriptions[&self.pc];
+        let pc_description = &self.world_description.pc_descriptions[&self.pc].description;
         let last_summary = self.summaries.last();
         let (summary, summary_turn) = match last_summary {
             Some(Summary { content, bday }) => (content.as_str(), *bday),
@@ -779,6 +787,12 @@ impl TurnInput {
 pub struct WorldDescription {
     pub name: String,
     pub main_description: String,
-    pub pc_descriptions: BTreeMap<String, String>,
+    pub pc_descriptions: BTreeMap<String, PcDescription>,
     pub init_action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PcDescription {
+    pub description: String,
+    pub initial_action: String,
 }
