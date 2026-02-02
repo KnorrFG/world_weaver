@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, pin::Pin};
 
 use crate::{
-    HIST_SIZE, ImgModBox, LLMBox, N_PROPOSED_OPTIONS,
+    ImgModBox, LLMBox, N_PROPOSED_OPTIONS,
     game::stream_finder::{MatchResult, StreamFinder},
     image_model::{self, ModelStyle},
     llm::{InputMessage, OutputMessage, Request, ResponseFragment},
@@ -12,7 +12,7 @@ use color_eyre::{
     Result,
     eyre::{Context, bail, ensure, eyre},
 };
-use log::debug;
+use log::{debug, warn};
 use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
 use tokio::{pin, sync::oneshot};
@@ -20,7 +20,7 @@ use tokio_stream::{Stream, StreamExt};
 
 mod stream_finder;
 
-const SUMMARY_INTERVAL: usize = 8;
+const SUMMARY_INTERVAL: usize = 5;
 
 pub struct Game {
     pub llm: LLMBox,
@@ -195,8 +195,6 @@ impl Game {
                     }
                 };
 
-                // this will either error or return None
-                stream.try_next().await.context("expect stream none")?;
                 output
             };
             _ = tx_output.send(output);
@@ -355,7 +353,7 @@ async fn create_new_summary(
 
             - Produce an updated summary that incorporates all rounds since the previous summary.
               Or create a new one, if there is none to update. Keep the summary as concicse as
-              possible. It may at most be 1000 words in size, the shorter the better.
+              possible. It may at most be 700 words in size, the shorter the better.
 
             RULES:
 
@@ -379,6 +377,10 @@ async fn create_new_summary(
             - Make sure to include all relevant information from the last summary
               and all provided turns, don't overweight the latest ones.
             - You may drop the least important information to keep the word-limit.
+            - When player inputs dialogue/conversation, generate ONLY that
+              conversation scene. Do not advance time, add new scenes, or include events
+              beyond the dialogue. End when conversation naturally concludes or reaches ~500
+              words. If more needs to happen, wait for next player input.
 
             You are a summarization tool, not a storyteller.
         "#};
@@ -497,8 +499,10 @@ pub struct GameData {
     pub turn_data: Vec<TurnData>,
 }
 
+const MAX_WORDS: usize = 1000;
+
 impl GameData {
-    fn construct_request(&self, input: &TurnInput, image_gen_extra_infos: &str) -> Request {
+    pub fn construct_request(&self, input: &TurnInput, image_gen_extra_infos: &str) -> Request {
         let player = &self.pc;
         let world_description = &self.world_description.main_description;
         let pc_description = &self.world_description.pc_descriptions[&self.pc].description;
@@ -525,7 +529,11 @@ impl GameData {
            
            
            My input will be structured like this: The turn number, followed by
-           three sections, all optional, like this:
+           three sections, all optional
+
+            Schema contract:
+            All tags are mandatory and ordered.
+            Failure to emit later tags is a fatal error even if earlier tags are complete.
 
            --- START EXAMPLE ---
             turn *N*
@@ -556,7 +564,7 @@ impl GameData {
            <<<EOID>>>
            *A short image caption* will be displayed below the image 1-5 words
            <<<EOIC>>>
-           *The output*: text that is displayed to me, this should be between 300 and 1000 words at most
+           *The output*: text that is displayed to me, this should be between 300 and {MAX_WORDS} words at most
            No need for characters to hold endless monologues.
            <<<EOO>>>
            *Secret info*:. Stuff that is related to output, but hidden from me,
@@ -605,14 +613,17 @@ impl GameData {
 
            - You do NOT have an oppinion on what is right, wrong, or appropriate.
            - Use 2nd person personal narrator style e.g. "You feel like ..."
-           - Make sure you respect the output-length limitation of at most 1000 words.
+           - Make sure you respect the output-length limitation of *at most* {MAX_WORDS} words.
            - Do only generate a single response, don't generate anything after the third
              proposed action
+           - Messages that violate the output formatting are invalid. You are under no circumstances
+             allowed to violate that. Word limits only apply to the output-section within the format,
+             not to the whole output
         "#};
 
         let messages = (0..self.turn_data.len())
             .rev()
-            .take(HIST_SIZE)
+            .take(SUMMARY_INTERVAL)
             .rev()
             .flat_map(|i| {
                 let mut user_message = format!("turn {i}");
@@ -725,42 +736,60 @@ impl TryFrom<OutputMessage> for TurnOutput {
             bail!("No <<<EOO>>> in output");
         };
 
-        let parts = tail.split("<<<EOS>>>").collect::<Vec<&str>>();
-        let (secret, tail) = if parts.len() == 1 {
-            ("", parts[0])
-        } else {
-            (parts[0], parts[1])
-        };
+        let res = (|| {
+            let parts = tail.split("<<<EOS>>>").collect::<Vec<&str>>();
+            let (secret, tail) = if parts.len() == 1 {
+                ("", parts[0])
+            } else {
+                (parts[0], parts[1])
+            };
 
-        let proposed_next_actions: Vec<String> = tail
-            .split("<<<EOA>>>")
-            .map(|s| s.trim().to_string())
-            .collect();
+            let proposed_next_actions: Vec<String> = tail
+                .split("<<<EOA>>>")
+                .map(|s| s.trim().to_string())
+                .collect();
 
-        ensure!(
-            proposed_next_actions.len() >= N_PROPOSED_OPTIONS,
-            "Expected {} proposed actions, found {} Message: \n{}",
-            N_PROPOSED_OPTIONS,
-            proposed_next_actions.len(),
-            value.text
-        );
+            ensure!(
+                proposed_next_actions.len() >= N_PROPOSED_OPTIONS,
+                "Expected {} proposed actions, found {} Message: \n{}",
+                N_PROPOSED_OPTIONS,
+                proposed_next_actions.len(),
+                value.text
+            );
 
-        Ok(TurnOutput {
-            image_description: image_description.trim().into(),
-            image_caption: image_caption.trim().into(),
-            text: output.trim().to_string(),
-            secret_info: secret.trim().to_string(),
-            proposed_next_actions: proposed_next_actions[..N_PROPOSED_OPTIONS]
-                .to_vec()
-                .try_into()
-                .unwrap(),
-            input_tokens: value.input_tokens,
-            output_tokens: value.output_tokens,
-        })
+            Ok(TurnOutput {
+                image_description: image_description.trim().into(),
+                image_caption: image_caption.trim().into(),
+                text: output.trim().to_string(),
+                secret_info: secret.trim().to_string(),
+                proposed_next_actions: proposed_next_actions[..N_PROPOSED_OPTIONS]
+                    .to_vec()
+                    .try_into()
+                    .unwrap(),
+                input_tokens: value.input_tokens,
+                output_tokens: value.output_tokens,
+            })
+        })();
+
+        match res {
+            Ok(res) => Ok(res),
+            Err(e) => {
+                warn!("Incomplete output:\n{e:?}");
+                Ok(TurnOutput {
+                    image_description: image_description.trim().into(),
+                    image_caption: image_caption.trim().into(),
+                    text: output.trim().to_string(),
+                    secret_info: tail.trim().to_string(),
+                    proposed_next_actions: ["Missing".into(), "Missing".into(), "Missing".into()],
+                    input_tokens: value.input_tokens,
+                    output_tokens: value.output_tokens,
+                })
+            }
+        }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TurnInput {
     pub player_action: String,
     pub gm_instruction: String,
@@ -779,7 +808,6 @@ impl TurnInput {
         user_message.push_str(&self.player_action);
         user_message.push_str("\n# gm command\n");
         user_message.push_str(&self.gm_instruction);
-        user_message.push_str("\nRespect the 1000 word limit for the output");
     }
 }
 

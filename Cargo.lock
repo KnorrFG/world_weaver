@@ -1122,6 +1122,7 @@ dependencies = [
  "bytes",
  "clap",
  "color-eyre",
+ "dirs",
  "expect-test",
  "indoc",
  "log",

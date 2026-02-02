@@ -468,6 +468,7 @@ impl GameContext {
         let last_output = last_turn.output.text.clone();
         let last_input = last_turn.input.player_action.clone();
         self.load_prev_turn()?;
+        self.load_from_current_past()?;
         Ok(self.generate_new_turn(TurnInput {
             player_action: last_input,
             gm_instruction: indoc::formatdoc!(
