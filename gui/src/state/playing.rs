@@ -16,7 +16,7 @@ use iced::{
 
 use crate::{
     ElemHelper, State, TryIntoExt,
-    context::game_context::{Complete, GameContext as Context, InThePast, SubState},
+    context::game_context::{Complete, GameContext as Context, ImageData, InThePast, SubState},
     elem_list, italic_text,
     message::{Message, UiMessage, ui_messages::Playing as MyMessage},
     state::{MainMenu, Modal, StateCommand, cmd, modal::confirm::ConfirmDialog},
@@ -208,7 +208,12 @@ impl State for Playing {
             .expect("No game in context while being in playing state");
 
         let mut sidebar = Column::new();
-        if let Some((handle, caption)) = &ctx.image_data {
+        if let Some(ImageData {
+            handle,
+            caption,
+            is_current: _,
+        }) = &ctx.image_data
+        {
             sidebar = sidebar.extend([
                 container(widget::image(handle).height(Length::Fill).expand(true))
                     .max_width(832)

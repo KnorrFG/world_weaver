@@ -6,7 +6,7 @@ use color_eyre::{
 };
 use derive_more::{From, TryInto};
 use iced::{Task, advanced::image::Handle as ImgHandle, widget::markdown};
-use nonempty::nonempty;
+use log::warn;
 
 use crate::{
     TryIntoExt,
@@ -14,8 +14,8 @@ use crate::{
 };
 use engine::{
     game::{
-        AdvanceResult, Game, Image, StartResultOrData, TurnData, TurnInput, TurnOutput,
-        WorldDescription,
+        AdvanceResult, Game, Image, StartResultOrData, StoredImageInfo, TurnData, TurnInput,
+        TurnOutput, WorldDescription,
     },
     save_archive::SaveArchive,
 };
@@ -27,7 +27,15 @@ pub struct GameContext {
     pub current_generation: usize,
     pub output_markdown: Vec<markdown::Item>,
     pub output_text: String,
-    pub image_data: Option<(ImgHandle, String)>,
+    pub image_data: Option<ImageData>,
+}
+
+pub struct ImageData {
+    pub handle: ImgHandle,
+    pub caption: String,
+    // if this is false, it implies the generation for the current image failed,
+    // and this is an older one
+    pub is_current: bool,
 }
 
 #[derive(Debug, Default, Clone, From, TryInto)]
@@ -70,10 +78,16 @@ impl GameContext {
     pub fn try_new(game: Game, mut save: SaveArchive) -> Result<Self> {
         if let Some(td) = game.data.turn_data.last().cloned() {
             let output_markdown = markdown::parse(&td.output.text).collect();
-            let image_data = Some((
-                ImgHandle::from_bytes(save.read_image(*td.image_ids.last())?),
-                td.image_captions.last().clone(),
-            ));
+            let image_data = game
+                .get_lates_image_info()
+                .map(|info| {
+                    color_eyre::eyre::Ok(ImageData {
+                        handle: ImgHandle::from_bytes(save.read_image(info.id)?),
+                        caption: info.caption.clone(),
+                        is_current: true,
+                    })
+                })
+                .transpose()?;
             let output_text = td.output.text.clone();
             Ok(Self {
                 game,
@@ -156,10 +170,18 @@ impl GameContext {
                 }
                 StartResultOrData::Data(turn_data) => {
                     self.output_markdown = markdown::parse(&turn_data.output.text).collect();
-                    self.image_data = Some((
-                        ImgHandle::from_bytes(self.save.read_image(*turn_data.image_ids.first())?),
-                        turn_data.image_captions.first().clone(),
-                    ));
+                    self.image_data = turn_data
+                        .images
+                        .first()
+                        .map(|info| {
+                            color_eyre::eyre::Ok(ImageData {
+                                handle: ImgHandle::from_bytes(self.save.read_image(info.id)?),
+                                caption: info.caption.clone(),
+                                is_current: true,
+                            })
+                        })
+                        .transpose()?;
+
                     self.sub_state = Complete { turn_data }.into();
                     Ok(Task::none())
                 }
@@ -236,8 +258,10 @@ impl GameContext {
                 self.game.update(
                     input,
                     output.clone(),
-                    nonempty![id],
-                    nonempty![image.caption],
+                    vec![StoredImageInfo {
+                        id,
+                        caption: image.caption,
+                    }],
                     summary_msg.map(|s| s.text),
                 )?;
                 self.save.write_game_data(&self.game.data)?;
@@ -258,7 +282,28 @@ impl GameContext {
             }
 
             ImageReady(generation, image) => {
-                let img = unpack_received_msg!(image, generation);
+                let img = {
+                    if generation < self.current_generation {
+                        return Ok(Task::none());
+                    }
+                    let Ok(output) = image else {
+                        if let Some(img_data) = &mut self.image_data {
+                            img_data.is_current = false;
+                        }
+                        warn!(
+                            "{}",
+                            indoc::formatdoc! {
+                             "
+                                There was an error with the image model.
+                                This can happen. Try again. If you're on Flux2, try Flux1.
+                                Details:
+                                {:?}",image
+                            }
+                        );
+                        return Ok(Task::none());
+                    };
+                    output
+                };
                 let WaitingForOutput {
                     input,
                     output,
@@ -266,10 +311,11 @@ impl GameContext {
                     stream_buffer,
                 } = self.sub_state.take().try_into_ex()?;
 
-                self.image_data = Some((
-                    ImgHandle::from_bytes(img.jpeg_bytes.clone()),
-                    img.caption.clone(),
-                ));
+                self.image_data = Some(ImageData {
+                    handle: ImgHandle::from_bytes(img.jpeg_bytes.clone()),
+                    caption: img.caption.clone(),
+                    is_current: true,
+                });
 
                 if let Some(output) = output {
                     self.request_summary(input, output, img)
@@ -310,10 +356,17 @@ impl GameContext {
             .turn_data
             .get(target_turn)
             .ok_or(eyre!("Invalid target turn: {target_turn}"))?;
-        self.image_data = Some((
-            ImgHandle::from_bytes(self.save.read_image(*turn_data.image_ids.first())?),
-            turn_data.image_captions.first().clone(),
-        ));
+        self.image_data = self
+            .game
+            .get_lates_image_info_for_turn(target_turn)
+            .map(|info| {
+                color_eyre::eyre::Ok(ImageData {
+                    handle: ImgHandle::from_bytes(self.save.read_image(info.id)?),
+                    caption: info.caption.clone(),
+                    is_current: turn_data.images.first().map(|i| i.id) == Some(info.id),
+                })
+            })
+            .transpose()?;
         self.output_markdown = markdown::parse(&turn_data.output.text).collect();
 
         // this looks wrong but is right. If we load the completed turn 0, the displayed output

@@ -191,18 +191,29 @@ impl SaveArchive {
             gd.summaries.clear();
         }
 
-        let latest_image = *latest_turn.image_ids.last();
+        let latest_image = gd
+            .turn_data
+            .iter()
+            .flat_map(|td| td.images.iter().map(|i| i.id))
+            .max();
+
         ensure!(
-            latest_image < self.image_index.len(),
+            latest_image.is_none_or(|i| i < self.image_index.len()),
             "Image index out of sync with game data"
         );
 
-        self.image_index = self.image_index[..=latest_image].to_vec();
-        self.header.index_offset = if let Some((offset, length)) = self.image_index.last() {
-            offset + length
-        } else {
-            Self::HEADER_SIZE + Self::DEFAULT_GAME_DATA_SIZE
-        };
+        match latest_image {
+            Some(i) => {
+                let (offset, length) = self.image_index[i];
+                self.header.index_offset = offset + length;
+                self.image_index = self.image_index[..=i].to_vec();
+            }
+            None => {
+                self.header.index_offset = Self::HEADER_SIZE + Self::DEFAULT_GAME_DATA_SIZE;
+                self.image_index.clear();
+            }
+        }
+
         let serialized_index = serde_binary::to_vec(&self.image_index, Endian::Little)?;
         self.file.set_len(self.header.index_offset)?;
         self.file.seek(SeekFrom::End(0))?;
@@ -244,10 +255,9 @@ fn write_header(file: &mut File, header: &SaveHeader) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::game::PcDescription;
+    use crate::game::{PcDescription, StoredImageInfo};
 
     use super::*;
-    use nonempty::nonempty;
     use std::collections::BTreeMap;
     use tempfile::NamedTempFile;
 
@@ -303,8 +313,10 @@ mod tests {
                 },
                 input,
                 output,
-                image_ids: nonempty![i],
-                image_captions: nonempty![format!("caption {i}")],
+                images: vec![StoredImageInfo {
+                    id: i,
+                    caption: format!("caption {i}"),
+                }],
             });
         }
 
@@ -431,7 +443,8 @@ mod tests {
         }
 
         // Images before clip are readable
-        let last_image_id = *last_turn.image_ids.last();
+        // in this test, this won't be None
+        let last_image_id = last_turn.images.last().unwrap().id;
         for i in 0..=last_image_id {
             let img = archive.read_image(i)?;
             assert_eq!(img, vec![i as u8; 4]);

@@ -13,7 +13,6 @@ use color_eyre::{
     eyre::{Context, bail, ensure, eyre},
 };
 use log::{debug, warn};
-use nonempty::NonEmpty;
 use serde::{Deserialize, Serialize};
 use tokio::{pin, sync::oneshot};
 use tokio_stream::{Stream, StreamExt};
@@ -253,12 +252,22 @@ impl Game {
         }
     }
 
+    pub fn get_lates_image_info(&self) -> Option<&StoredImageInfo> {
+        self.data.turn_data.iter().flat_map(|td| &td.images).last()
+    }
+
+    pub fn get_lates_image_info_for_turn(&self, turn: usize) -> Option<&StoredImageInfo> {
+        self.data.turn_data[..turn]
+            .iter()
+            .flat_map(|td| &td.images)
+            .last()
+    }
+
     pub fn update(
         &mut self,
         input: TurnInput,
         output: TurnOutput,
-        image_ids: NonEmpty<usize>,
-        image_captions: NonEmpty<String>,
+        images: Vec<StoredImageInfo>,
         summary: Option<String>,
     ) -> Result<()> {
         let turn_data = TurnData {
@@ -268,8 +277,7 @@ impl Game {
             },
             input,
             output: output.clone(),
-            image_ids,
-            image_captions,
+            images,
         };
         self.data.turn_data.push(turn_data);
 
@@ -667,8 +675,13 @@ pub struct TurnData {
     pub summary_before_input: Option<usize>,
     pub input: TurnInput,
     pub output: TurnOutput,
-    pub image_ids: NonEmpty<usize>,
-    pub image_captions: NonEmpty<String>,
+    pub images: Vec<StoredImageInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredImageInfo {
+    pub id: usize,
+    pub caption: String,
 }
 
 #[derive(Debug, Clone)]
