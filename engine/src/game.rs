@@ -195,6 +195,8 @@ impl Game {
                     }
                 };
 
+                // this will either error or return None
+                stream.try_next().await.context("expect stream none")?;
                 output
             };
             _ = tx_output.send(output);

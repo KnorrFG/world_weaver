@@ -166,7 +166,40 @@ impl GameContext {
             },
 
             OutputComplete(generation, turn_output) => {
-                let output = unpack_received_msg!(turn_output, generation);
+                let output = {
+                    if generation < self.current_generation {
+                        return Ok(Task::none());
+                    }
+
+                    let Ok(output) = turn_output else {
+                        // from time to time, the connection will be aborted after the output is
+                        // complete, in this case an error is returned, and we'll end up here,
+                        // but if the output is already complete, we'll ignore it.
+                        if matches!(
+                            self.sub_state,
+                            SubState::WaitingForOutput(WaitingForOutput {
+                                output: Some(_),
+                                ..
+                            })
+                        ) {
+                            return Ok(Task::none());
+                        }
+
+                        self.current_generation += 1;
+                        let turn = self.current_turn();
+                        if turn > 0 {
+                            self.load_completed_turn(self.current_turn() - 1)?;
+                        }
+                        bail!(indoc::formatdoc! {
+                            "
+                        There was an error with the LLM response.
+                        This can happen. Try again. If it repeats, try doing something else.
+                        Details:
+                        {:?}",turn_output
+                        });
+                    };
+                    output
+                };
                 let WaitingForOutput {
                     stream_buffer,
                     input,
