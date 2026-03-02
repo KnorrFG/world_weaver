@@ -1,6 +1,8 @@
 Todos:
 	
-	this is the error that occurs occasionally after the output is already complete:
+	- On a recreated turn, going back, and going forward again will display the original image instead of the new one
+
+	- this is the error that occurs occasionally after the output is already complete:
 
 		There was an error with the LLM response or the image model.
 		This can happen. Try again.

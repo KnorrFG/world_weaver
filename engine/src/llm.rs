@@ -96,7 +96,7 @@ impl ProvidedModel {
     pub fn make(self, api_key: String) -> LLMBox {
         match self {
             ProvidedModel::ClaudeSonette45 => {
-                Box::new(Claude::new(api_key, "claude-sonnet-4-5".into()))
+                Box::new(Claude::new(api_key, "claude-sonnet-4-6".into()))
             }
             ProvidedModel::ClaudeHaiku45 => {
                 Box::new(Claude::new(api_key, "claude-haiku-4-5".into()))

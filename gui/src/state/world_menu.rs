@@ -122,3 +122,16 @@ impl super::State for WorldMenu {
         Box::new(Clone::clone(self))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use engine::game::WorldDescription;
+
+    use super::EXAMPLE_WORLD;
+
+    #[test]
+    fn embedded_demo_world_is_deserializable() {
+        ron::from_str::<WorldDescription>(EXAMPLE_WORLD)
+            .expect("Embedded demo world Neon_Shadows.ron must deserialize");
+    }
+}
