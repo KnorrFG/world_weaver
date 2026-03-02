@@ -252,12 +252,12 @@ impl Game {
         }
     }
 
-    pub fn get_lates_image_info(&self) -> Option<&StoredImageInfo> {
+    pub fn get_latest_image_info(&self) -> Option<&StoredImageInfo> {
         self.data.turn_data.iter().flat_map(|td| &td.images).last()
     }
 
-    pub fn get_lates_image_info_for_turn(&self, turn: usize) -> Option<&StoredImageInfo> {
-        self.data.turn_data[..turn]
+    pub fn get_latest_image_info_for_turn(&self, turn: usize) -> Option<&StoredImageInfo> {
+        self.data.turn_data[..=turn]
             .iter()
             .flat_map(|td| &td.images)
             .last()

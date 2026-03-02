@@ -79,7 +79,7 @@ impl GameContext {
         if let Some(td) = game.data.turn_data.last().cloned() {
             let output_markdown = markdown::parse(&td.output.text).collect();
             let image_data = game
-                .get_lates_image_info()
+                .get_latest_image_info()
                 .map(|info| {
                     color_eyre::eyre::Ok(ImageData {
                         handle: ImgHandle::from_bytes(save.read_image(info.id)?),
@@ -358,7 +358,7 @@ impl GameContext {
             .ok_or(eyre!("Invalid target turn: {target_turn}"))?;
         self.image_data = self
             .game
-            .get_lates_image_info_for_turn(target_turn)
+            .get_latest_image_info_for_turn(target_turn)
             .map(|info| {
                 color_eyre::eyre::Ok(ImageData {
                     handle: ImgHandle::from_bytes(self.save.read_image(info.id)?),
