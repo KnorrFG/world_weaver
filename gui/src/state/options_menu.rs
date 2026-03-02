@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use color_eyre::{Result, eyre::eyre};
 use iced::{
-    Length, Task,
-    widget::{button, column, container, radio, row, space, text, text_editor, text_input},
+    Color, Length, Task, padding,
+    widget::{button, column, container, radio, row, scrollable, space, text, text_editor, text_input},
 };
 use strum::IntoEnumIterator;
 
@@ -14,7 +14,6 @@ use crate::{
     message::ui_messages::OptionsMenu as MyMessage,
     save_config,
     state::{MainMenu, Modal, State, cmd},
-    top_level_container,
 };
 use engine::{
     image_model::{self, Model, ModelStyle},
@@ -269,15 +268,28 @@ impl State for OptionsMenu {
             }
         }
 
-        items.push(space().height(30).into());
-        items.push(row![button("Ok").on_press(MyMessage::Ok.into())].into());
-
-        top_level_container(
-            column(items)
-                .spacing(12)
-                .width(Length::Fill)
-                .height(Length::Fill),
+        let content = container(
+            scrollable(
+                container(column(items).spacing(12).width(Length::Fill))
+                    .padding(padding::all(10).right(20)),
+            )
+            .height(Length::Fill),
         )
+        .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95)));
+
+        container(
+            container(
+                column![
+                    content,
+                    container(row![button("Ok").on_press(MyMessage::Ok.into())]).padding(10)
+                ]
+                .height(Length::Fill)
+                .width(Length::Fill)
+            )
+            .padding(20)
+            .max_width(800),
+        )
+        .center(Length::Fill)
         .into()
     }
 
