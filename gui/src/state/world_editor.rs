@@ -10,7 +10,7 @@ use crate::{
         MainMenu, Modal, Playing, StateCommand, StateExt, WorldMenu, cmd,
         start_new_game::StartNewGame,
     },
-    top_level_container, worlds_dir,
+    worlds_dir,
 };
 
 use color_eyre::{
@@ -19,8 +19,11 @@ use color_eyre::{
 };
 use engine::game::{PcDescription, WorldDescription};
 use iced::{
-    Font, Length, Task,
-    widget::{Space, button, column, container, row, rule, space, text, text_editor, text_input},
+    Color, Font, Length, Task, padding,
+    widget::{
+        Space, button, column, container, row, rule, scrollable, space, text, text_editor,
+        text_input,
+    },
 };
 
 use super::State;
@@ -342,14 +345,28 @@ impl State for WorldEditor {
         }
 
         button_row.push(space::horizontal().into());
-        tlc.push(row(button_row).spacing(10).width(Length::Fill).into());
-
-        top_level_container(
-            column(tlc)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .spacing(20),
+        let content = container(
+            scrollable(
+                container(column(tlc).width(Length::Fill).spacing(20))
+                    .padding(padding::all(10).right(20)),
+            )
+            .height(Length::Fill),
         )
+        .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95)));
+
+        container(
+            container(
+                column![
+                    content,
+                    container(row(button_row).spacing(10).width(Length::Fill)).padding(10)
+                ]
+                .height(Length::Fill)
+                .width(Length::Fill)
+            )
+            .padding(20)
+            .max_width(800),
+        )
+        .center(Length::Fill)
         .into()
     }
 
