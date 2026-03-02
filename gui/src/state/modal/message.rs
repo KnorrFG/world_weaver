@@ -2,12 +2,11 @@ use crate::{
     bold_text,
     context::Context,
     message::{UiMessage, ui_messages::MessageDialog as MyMessage},
-    state::modal::modal_outer_container,
 };
 
 use color_eyre::Result;
 use iced::{
-    Element, Length, Task, padding,
+    Border, Color, Element, Length, Task, padding,
     widget::{button, column, container, scrollable, text_editor, text_editor::Action},
 };
 
@@ -50,22 +49,32 @@ impl super::Dialog for MessageDialog {
     }
 
     fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, UiMessage> {
-        modal_outer_container(
+        let content = container(
+            scrollable(
+                container(
+                    text_editor(&self.editor_content)
+                        .on_action(|a| { MyMessage::EditAction(a).into() }),
+                )
+                .padding(padding::all(10).right(20)),
+            )
+            .height(Length::Shrink),
+        )
+        .max_height(500)
+        .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95)));
+
+        container(
             column![
                 bold_text(&self.title).size(20),
-                scrollable(
-                    container(
-                        text_editor(&self.editor_content)
-                            .on_action(|a| { MyMessage::EditAction(a).into() })
-                    )
-                    .padding(padding::all(10).right(20))
-                )
-                .height(Length::Fill),
-                container(button("Ok").on_press(MyMessage::Confirm.into()))
-                    .align_right(Length::Fill)
+                content,
+                container(button("Ok").on_press(MyMessage::Confirm.into())).align_right(Length::Fill)
             ]
             .spacing(10),
         )
+        .height(Length::Shrink)
+        .padding(20)
+        .max_width(700)
+        .max_height(700)
+        .style(|_theme| container::background(Color::WHITE).border(Border::default().rounded(10)))
         .into()
     }
 }

@@ -11,7 +11,7 @@ use iced::{
     Element, Font, Length, Task, Theme,
     font::{self},
     padding,
-    widget::{container, scrollable, text},
+    widget::{Id, container, operation, scrollable, text},
 };
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -72,13 +72,26 @@ impl Gui {
         match message {
             Message::Ui(ui_message) => {
                 let cmd = self.state.update(ui_message, &mut self.ctx)?;
-                if let Some(new_state) = cmd.transition {
-                    self.state = new_state;
-                }
-                Ok(cmd
+                let mut task = cmd
                     .task
                     .map(|t| t.map(Message::from))
-                    .unwrap_or(Task::none()))
+                    .unwrap_or(Task::none());
+                if let Some(new_state) = cmd.transition {
+                    self.state = new_state;
+                    // Keep Playing's output scroll position stable across state transitions.
+                    // In iced, restoring scroll position is done via widget operations/tasks,
+                    // so we centralize it here instead of scattering restore calls in states.
+                    if let Some(gctx) = &self.ctx.game {
+                        task = task.chain(operation::snap_to::<Message>(
+                            playing_output_scroll_id(),
+                            operation::RelativeOffset {
+                                x: 0.0,
+                                y: gctx.output_scroll_y,
+                            },
+                        ));
+                    }
+                }
+                Ok(task)
             }
             Message::Context(context_message) => self.ctx.update(context_message),
         }
@@ -95,6 +108,10 @@ impl Gui {
 
 pub const CLAUDE_MODEL: &str = "claude-sonnet-4-5";
 pub const PERSISTENT_INFO_NAME: &str = "persisted_info";
+
+pub fn playing_output_scroll_id() -> Id {
+    Id::new("playing-output-scroll")
+}
 
 pub fn load_ron_file<T: DeserializeOwned>(world: &Path) -> Result<T> {
     let src = fs::read_to_string(world)?;

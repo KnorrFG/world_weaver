@@ -25,6 +25,7 @@ pub struct GameContext {
     pub save: SaveArchive,
     pub sub_state: SubState,
     pub current_generation: usize,
+    pub output_scroll_y: f32,
     pub output_markdown: Vec<markdown::Item>,
     pub output_text: String,
     pub image_data: Option<ImageData>,
@@ -97,6 +98,7 @@ impl GameContext {
                 image_data,
                 output_text,
                 current_generation: 0,
+                output_scroll_y: 0.0,
             })
         } else {
             Ok(Self {
@@ -107,6 +109,7 @@ impl GameContext {
                 image_data: None,
                 output_text: String::new(),
                 current_generation: 0,
+                output_scroll_y: 0.0,
             })
         }
     }
@@ -539,6 +542,40 @@ impl GameContext {
         })
     }
 
+    fn summary_idx_for_current_turn(&self) -> Result<Option<usize>> {
+        let turn = self.current_turn();
+        if turn < self.game.current_turn() {
+            Ok(self
+                .game
+                .data
+                .turn_data
+                .get(turn)
+                .ok_or(eyre!("Invalid turn index: {turn}"))?
+                .summary_before_input)
+        } else {
+            Ok(self.game.data.summaries.len().checked_sub(1))
+        }
+    }
+
+    pub fn summary_for_current_turn(&self) -> Result<Option<String>> {
+        let summary_idx = self.summary_idx_for_current_turn()?;
+        Ok(summary_idx.and_then(|i| self.game.data.summaries.get(i).map(|s| s.content.clone())))
+    }
+
+    pub fn update_summary_for_current_turn(&mut self, val: String) -> Result<()> {
+        let summary_idx = self
+            .summary_idx_for_current_turn()?
+            .ok_or(eyre!("No summary is available for this turn"))?;
+        self.game
+            .data
+            .summaries
+            .get_mut(summary_idx)
+            .ok_or(eyre!("Invalid summary index: {summary_idx}"))?
+            .content = val;
+        self.save.write_game_data(&self.game.data)?;
+        Ok(())
+    }
+
     pub fn input(&self) -> Result<&TurnInput> {
         Ok(match &self.sub_state {
             SubState::InThePast(InThePast { data, .. }) => &data.input,
@@ -575,6 +612,10 @@ impl GameContext {
         self.game.data.world_description = world;
         self.save.write_game_data(&self.game.data)?;
         Ok(())
+    }
+
+    pub fn set_output_scroll_y(&mut self, y: f32) {
+        self.output_scroll_y = y.clamp(0.0, 1.0);
     }
 }
 

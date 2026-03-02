@@ -3,13 +3,13 @@ use crate::{
     message::{UiMessage, ui_messages::EditDialog as MyMessage},
     state::{
         Dialog,
-        modal::{DialogResult, modal_outer_container},
+        modal::DialogResult,
     },
 };
 use color_eyre::Result;
 use iced::{
-    Element, Task,
-    widget::{button, column, row, space, text, text_editor},
+    Border, Color, Element, Length, Task, padding,
+    widget::{button, column, container, row, space, text, text_editor},
 };
 
 /// A generic editor modal that produces a Task<Message> when saved
@@ -69,19 +69,29 @@ where
     fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, UiMessage> {
         let editor = text_editor(&self.editor_content).on_action(|a| MyMessage::Update(a).into());
 
-        let content = column![
-            text(&self.title).size(20),
-            editor,
-            row![
-                space::horizontal(),
-                button("Cancel").on_press(MyMessage::Cancel.into()),
-                button("Save").on_press(MyMessage::Save.into()),
-            ]
-            .spacing(10)
-        ]
-        .spacing(10)
-        .padding(20);
+        let content = container(container(editor).padding(padding::all(10).right(20)))
+            .height(Length::Shrink)
+            .max_height(500)
+            .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95)));
 
-        modal_outer_container(content).into()
+        container(
+            column![
+                text(&self.title).size(20),
+                content,
+                row![
+                    space::horizontal(),
+                    button("Cancel").on_press(MyMessage::Cancel.into()),
+                    button("Save").on_press(MyMessage::Save.into()),
+                ]
+                .spacing(10)
+            ]
+            .spacing(10),
+        )
+        .height(Length::Shrink)
+        .padding(20)
+        .max_width(700)
+        .max_height(700)
+        .style(|_theme| container::background(Color::WHITE).border(Border::default().rounded(10)))
+        .into()
     }
 }

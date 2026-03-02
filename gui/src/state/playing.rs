@@ -8,7 +8,8 @@ use iced::{
     alignment::{Horizontal, Vertical},
     padding,
     widget::{
-        self, Button, Column, Container, button, container, markdown, row, scrollable, space,
+        self, Button, Column, Container, button, container, markdown, operation, row,
+        scrollable, space,
         text_editor::{self, Edit},
         text_input,
     },
@@ -19,6 +20,7 @@ use crate::{
     context::game_context::{Complete, GameContext as Context, ImageData, InThePast, SubState},
     elem_list, italic_text,
     message::{Message, UiMessage, ui_messages::Playing as MyMessage},
+    playing_output_scroll_id,
     state::{MainMenu, Modal, StateCommand, cmd, modal::confirm::ConfirmDialog},
 };
 
@@ -137,6 +139,18 @@ impl State for Playing {
                 ctx.load_completed_turn(ctx.game.current_turn() - 1)?;
                 cmd::none()
             }
+            ScrollOutputToTop => cmd::task(operation::snap_to::<Message>(
+                playing_output_scroll_id(),
+                operation::RelativeOffset::START,
+            )),
+            ScrollOutputToBottom => cmd::task(operation::snap_to::<Message>(
+                playing_output_scroll_id(),
+                operation::RelativeOffset::END,
+            )),
+            OutputScrolled(y) => {
+                ctx.set_output_scroll_y(y);
+                cmd::none()
+            }
             LoadGameFromCurrentPastButtonPressed => cmd::transition(Modal::new(
                 State::clone(self),
                 ConfirmDialog::new(
@@ -170,6 +184,22 @@ impl State for Playing {
                     "Image Description",
                     img_info,
                 ))
+            }
+            ShowSummary => {
+                let Some(summary) = ctx.summary_for_current_turn()? else {
+                    return cmd::transition(Modal::message(
+                        State::clone(self),
+                        "Summary",
+                        "No summary is available for this turn yet.",
+                    ));
+                };
+                cmd::transition(Modal::edit(State::clone(self), "Summary", summary, |s| {
+                    Task::done(MyMessage::UpdateSummary(s).into())
+                }))
+            }
+            UpdateSummary(s) => {
+                ctx.update_summary_for_current_turn(s)?;
+                cmd::none()
             }
             CopyInputToClipboard => {
                 let input = ctx.input()?;
@@ -306,16 +336,29 @@ impl State for Playing {
         }
 
         let text_row = row![
-            container(scrollable(
-                container(widget::column(main_col).align_x(Horizontal::Center))
-                    .padding(padding::all(10.).right(20.))
-            ))
+            widget::column![
+                button("↑").on_press(MyMessage::ScrollOutputToTop.into()),
+                button("↓").on_press(MyMessage::ScrollOutputToBottom.into()),
+            ]
+            .spacing(10)
+            .align_x(Horizontal::Center),
+            container(
+                scrollable(
+                    container(widget::column(main_col).align_x(Horizontal::Center))
+                        .padding(padding::all(10.).right(20.)),
+                )
+                .id(playing_output_scroll_id())
+                .on_scroll(|viewport| {
+                    MyMessage::OutputScrolled(viewport.relative_offset().y).into()
+                }),
+            )
             .width(700)
             .padding(10)
             .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95))),
             sidebar.align_x(Horizontal::Center).height(Length::Fill)
         ]
-        .spacing(20);
+        .spacing(20)
+        .align_y(Vertical::Top);
 
         let main_col = widget::column![
             mk_header(ctx),
@@ -428,7 +471,8 @@ fn below_output_buttons() -> Element<'static, UiMessage> {
     widget::row![
         space::horizontal(),
         button("✎").on_press(MyMessage::EditOutputPressed.into()),
-        button("👁").on_press(MyMessage::ShowHiddenText.into())
+        button("👁").on_press(MyMessage::ShowHiddenText.into()),
+        button("🧾").on_press(MyMessage::ShowSummary.into())
     ]
     .spacing(10)
     .width(Length::Fill)
