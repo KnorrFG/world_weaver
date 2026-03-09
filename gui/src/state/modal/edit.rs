@@ -1,15 +1,12 @@
 use crate::{
     context::Context,
     message::{UiMessage, ui_messages::EditDialog as MyMessage},
-    state::{
-        Dialog,
-        modal::DialogResult,
-    },
+    state::{Dialog, modal::DialogResult},
 };
 use color_eyre::Result;
 use iced::{
     Border, Color, Element, Length, Task, padding,
-    widget::{button, column, container, row, space, text, text_editor},
+    widget::{button, column, container, row, scrollable, space, text, text_editor},
 };
 
 /// A generic editor modal that produces a Task<Message> when saved
@@ -69,10 +66,12 @@ where
     fn view<'a>(&'a self, _ctx: &'a Context) -> Element<'a, UiMessage> {
         let editor = text_editor(&self.editor_content).on_action(|a| MyMessage::Update(a).into());
 
-        let content = container(container(editor).padding(padding::all(10).right(20)))
-            .height(Length::Shrink)
-            .max_height(500)
-            .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95)));
+        let content = container(
+            scrollable(container(editor).padding(padding::all(10).right(20))).height(Length::Fill),
+        )
+        .height(Length::Shrink)
+        .max_height(550)
+        .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95)));
 
         container(
             column![
