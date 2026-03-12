@@ -90,6 +90,8 @@ pub enum ProvidedModel {
     ClaudeHaiku,
     #[strum(to_string = "Aion-1.0 (openrouter.ai)")]
     Aion1Openr,
+    #[strum(to_string = "Aion-2.0 (openrouter.ai)")]
+    Aion2Openr,
 }
 
 impl ProvidedModel {
@@ -104,6 +106,11 @@ impl ProvidedModel {
                 "https://openrouter.ai/api/v1/chat/completions",
                 "aion-labs/aion-1.0",
             )),
+            ProvidedModel::Aion2Openr => Box::new(OpenAIChat::new(
+                api_key,
+                "https://openrouter.ai/api/v1/chat/completions",
+                "aion-labs/aion-2.0",
+            )),
         }
     }
 
@@ -112,6 +119,7 @@ impl ProvidedModel {
             ProvidedModel::ClaudeSonette => ModelProvider::Anthropic,
             ProvidedModel::ClaudeHaiku => ModelProvider::Anthropic,
             ProvidedModel::Aion1Openr => ModelProvider::Openrouter,
+            ProvidedModel::Aion2Openr => ModelProvider::Openrouter,
         }
     }
 }

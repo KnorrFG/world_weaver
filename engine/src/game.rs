@@ -363,7 +363,7 @@ async fn create_new_summary(
 
             - Produce an updated summary that incorporates all rounds since the previous summary.
               Or create a new one, if there is none to update. Keep the summary as concicse as
-              possible. It may at most be 700 words in size, the shorter the better.
+              possible. It may at most be 2000 words in size, the shorter the better.
 
             RULES:
 
@@ -574,7 +574,7 @@ impl GameData {
            <<<EOID>>>
            *A short image caption* will be displayed below the image 1-5 words
            <<<EOIC>>>
-           *The output*: text that is displayed to me, this should be between 300 and {MAX_WORDS} words at most
+           *The output*: text that is displayed to me, this should be roughly {MAX_WORDS} words.
            No need for characters to hold endless monologues.
            <<<EOO>>>
            *Secret info*:. Stuff that is related to output, but hidden from me,
