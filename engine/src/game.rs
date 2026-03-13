@@ -114,6 +114,7 @@ impl Game {
                 let mut soi_finder = StreamFinder::new("<<<SOID>>>");
                 let mut eoo_finder = StreamFinder::new("<<<EOO>>>");
                 let mut eoi_finder = StreamFinder::new("<<<EOIC>>>");
+                let mut discarded_prefix = String::new();
                 let mut image_description = String::new();
                 let mut post_eoi_text = None;
 
@@ -126,11 +127,14 @@ impl Game {
                                     SendToLLMState::LookingForStartOfImageDescription => {
                                         match soi_finder.process(&f) {
                                             MatchResult::Blocked => {},
-                                            MatchResult::StopTokenMatched { pre_token_text: _, post_token_text } => {
+                                            MatchResult::StopTokenMatched { pre_token_text, post_token_text } => {
+                                                discarded_prefix.push_str(&pre_token_text);
                                                 image_description.push_str(&post_token_text);
                                                 mode = SendToLLMState::ParsingImageDescription;
                                             },
-                                            MatchResult::CheckedOutput(_) => {},
+                                            MatchResult::CheckedOutput(output) => {
+                                                discarded_prefix.push_str(&output);
+                                            },
                                         }
                                     }
                                     SendToLLMState::ParsingImageDescription => {
@@ -180,7 +184,7 @@ impl Game {
                                 }
                             }
                             ResponseFragment::MessageComplete(m) => {
-                                debug!("Output complete:\n{}", m.text);
+                                debug!("Output complete:\n{}{}", discarded_prefix, m.text);
                                 let output = TurnOutput::try_from(m).context("parse output")?;
                                 if let Some(tx) = tx_img_description {
                                     _ = tx.send(ImageDescription {
