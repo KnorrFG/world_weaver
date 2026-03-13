@@ -1,10 +1,7 @@
-use std::mem;
-
 use color_eyre::{
     Result,
     eyre::{bail, eyre},
 };
-use derive_more::{From, TryInto};
 use iced::{Task, advanced::image::Handle as ImgHandle, widget::markdown};
 use log::warn;
 
@@ -14,11 +11,17 @@ use crate::{
 };
 use engine::{
     game::{
-        AdvanceResult, Game, Image, StartResultOrData, StoredImageInfo, TurnData, TurnInput,
-        TurnOutput, WorldDescription,
+        AdvanceResult, Game, StartResultOrData, StoredImageInfo, TurnInput, WorldDescription,
     },
     save_archive::SaveArchive,
 };
+
+mod pending_turn;
+mod state;
+
+use pending_turn::{FinalizingTurn, PendingTurn, Resolution};
+pub use pending_turn::ImageState;
+pub use state::{Complete, InThePast, SubState};
 
 pub struct GameContext {
     pub game: Game,
@@ -37,50 +40,6 @@ pub struct ImageData {
     // if this is false, it implies the generation for the current image failed,
     // and this is an older one
     pub is_current: bool,
-}
-
-#[derive(Debug, Default, Clone, From, TryInto)]
-pub enum SubState {
-    #[default]
-    Uninit,
-    Complete(Complete),
-    WaitingForOutput(WaitingForOutput),
-    WaitingForSummary(WaitingForSummary),
-    InThePast(InThePast),
-}
-
-#[derive(Debug, Clone)]
-pub struct Complete {
-    pub turn_data: TurnData,
-}
-
-#[derive(Debug, Clone)]
-pub struct WaitingForOutput {
-    pub stream_buffer: String,
-    pub input: TurnInput,
-    pub output: Option<TurnOutput>,
-    pub image: ImageState,
-}
-
-#[derive(Debug, Clone)]
-pub struct WaitingForSummary {
-    pub input: TurnInput,
-    pub output: TurnOutput,
-    pub image: Option<Image>,
-}
-
-#[derive(Debug, Clone)]
-pub struct InThePast {
-    pub completed_turn: usize,
-    pub data: TurnData,
-}
-
-#[derive(Debug, Default, Clone)]
-pub enum ImageState {
-    #[default]
-    Pending,
-    Ready(Image),
-    Failed,
 }
 
 impl GameContext {
@@ -170,13 +129,7 @@ impl GameContext {
                     let stream_task = Task::run(text_stream, move |res| {
                         NewTextFragment(generation, res).into()
                     });
-                    self.sub_state = WaitingForOutput {
-                        input,
-                        output: None,
-                        image: ImageState::Pending,
-                        stream_buffer: "".into(),
-                    }
-                    .into();
+                    self.sub_state = PendingTurn::new(input).into();
                     Ok(Task::batch([output_fut, stream_task, image_fut]))
                 }
                 StartResultOrData::Data(turn_data) => {
@@ -210,7 +163,7 @@ impl GameContext {
                         // but if the output is already complete, we'll ignore it.
                         if matches!(
                             self.sub_state,
-                            SubState::WaitingForOutput(WaitingForOutput {
+                            SubState::WaitingForOutput(PendingTurn {
                                 output: Some(_),
                                 ..
                             })
@@ -233,35 +186,17 @@ impl GameContext {
                     };
                     output
                 };
-                let WaitingForOutput {
-                    stream_buffer,
-                    input,
-                    output: _,
-                    image,
-                } = self.sub_state.take().try_into_ex()?;
 
                 self.output_text = output.text.clone();
                 self.output_markdown = markdown::parse(&self.output_text).collect();
 
-                match image {
-                    ImageState::Ready(image) => self.request_summary(input, output, Some(image)),
-                    ImageState::Failed => self.request_summary(input, output, None),
-                    ImageState::Pending => {
-                        self.sub_state = WaitingForOutput {
-                            stream_buffer,
-                            input,
-                            output: Some(output),
-                            image: ImageState::Pending,
-                        }
-                        .into();
-                        Ok(Task::none())
-                    }
-                }
+                let pending_turn: PendingTurn = self.sub_state.take().try_into_ex()?;
+                self.apply_resolution(pending_turn.finish_output(output))
             }
 
             SummaryFinished(generation, message) => {
                 let summary_msg = unpack_received_msg!(message, generation);
-                let WaitingForSummary {
+                let FinalizingTurn {
                     input,
                     output,
                     image,
@@ -318,33 +253,10 @@ impl GameContext {
                         }
                     );
 
-                    let WaitingForOutput {
-                        input,
-                        output,
-                        image: _,
-                        stream_buffer,
-                    } = self.sub_state.take().try_into_ex()?;
-
-                    if let Some(output) = output {
-                        return self.request_summary(input, output, None);
-                    } else {
-                        self.sub_state = WaitingForOutput {
-                            input,
-                            output: None,
-                            image: ImageState::Failed,
-                            stream_buffer,
-                        }
-                        .into();
-                    }
-
-                    return Ok(Task::none());
+                    let pending_turn: PendingTurn = self.sub_state.take().try_into_ex()?;
+                    return self.apply_resolution(pending_turn.fail_image());
                 };
-                let WaitingForOutput {
-                    input,
-                    output,
-                    image: _,
-                    stream_buffer,
-                } = self.sub_state.take().try_into_ex()?;
+                let pending_turn: PendingTurn = self.sub_state.take().try_into_ex()?;
 
                 self.image_data = Some(ImageData {
                     handle: ImgHandle::from_bytes(img.jpeg_bytes.clone()),
@@ -352,18 +264,7 @@ impl GameContext {
                     is_current: true,
                 });
 
-                if let Some(output) = output {
-                    self.request_summary(input, output, Some(img))
-                } else {
-                    self.sub_state = WaitingForOutput {
-                        input,
-                        output: None,
-                        image: ImageState::Ready(img),
-                        stream_buffer,
-                    }
-                    .into();
-                    Ok(Task::none())
-                }
+                self.apply_resolution(pending_turn.finish_image(img))
             }
         }
     }
@@ -469,23 +370,23 @@ impl GameContext {
         Ok(())
     }
 
-    fn request_summary(
-        &mut self,
-        input: TurnInput,
-        output: TurnOutput,
-        image: Option<Image>,
-    ) -> Result<Task<Message>> {
-        self.sub_state = WaitingForSummary {
-            input,
-            output,
-            image,
-        }
-        .into();
+    fn request_summary(&mut self, turn: FinalizingTurn) -> Result<Task<Message>> {
+        self.sub_state = turn.into();
         let fut = self.game.mk_summary_if_neccessary();
         let generation = self.current_generation;
         Ok(Task::perform(fut, move |res| {
             ContextMessage::SummaryFinished(generation, res).into()
         }))
+    }
+
+    fn apply_resolution(&mut self, resolution: Resolution) -> Result<Task<Message>> {
+        match resolution {
+            Resolution::Pending(turn) => {
+                self.sub_state = turn.into();
+                Ok(Task::none())
+            }
+            Resolution::Finalizing(turn) => self.request_summary(turn),
+        }
     }
 
     pub fn generate_new_turn(&mut self, input: TurnInput) -> Task<Message> {
@@ -496,13 +397,7 @@ impl GameContext {
             round_output,
             image,
         } = self.game.send_to_llm(input.clone());
-        self.sub_state = WaitingForOutput {
-            input,
-            output: None,
-            image: ImageState::Pending,
-            stream_buffer: "".into(),
-        }
-        .into();
+        self.sub_state = PendingTurn::new(input).into();
         let generation = self.current_generation;
         Task::batch([
             Task::perform(round_output, move |x| {
@@ -612,8 +507,8 @@ impl GameContext {
         Ok(match &self.sub_state {
             SubState::InThePast(InThePast { data, .. }) => &data.input,
             SubState::Complete(Complete { turn_data }) => &turn_data.input,
-            SubState::WaitingForOutput(WaitingForOutput { input, .. }) => input,
-            SubState::WaitingForSummary(WaitingForSummary { input, .. }) => input,
+            SubState::WaitingForOutput(PendingTurn { input, .. }) => input,
+            SubState::WaitingForSummary(FinalizingTurn { input, .. }) => input,
             other => bail!("Invalid substate when getting input: {other:#?}",),
         })
     }
@@ -648,27 +543,5 @@ impl GameContext {
 
     pub fn set_output_scroll_y(&mut self, y: f32) {
         self.output_scroll_y = y.clamp(0.0, 1.0);
-    }
-}
-
-impl SubState {
-    fn stream_buffer_mut(&mut self) -> Result<&mut String> {
-        if let SubState::WaitingForOutput(WaitingForOutput { stream_buffer, .. }) = self {
-            Ok(stream_buffer)
-        } else {
-            Err(eyre!("Can't provide stream_buffer while being: {self:#?}"))
-        }
-    }
-
-    fn take(&mut self) -> Self {
-        mem::take(self)
-    }
-
-    pub fn turn_data(&self) -> Result<&TurnData> {
-        match self {
-            Self::Complete(Complete { turn_data }) => Ok(turn_data),
-            Self::InThePast(InThePast { data, .. }) => Ok(data),
-            _ => Err(eyre!("Trying to get turn-data while being: {self:?}")),
-        }
     }
 }
