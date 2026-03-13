@@ -59,20 +59,28 @@ pub struct WaitingForOutput {
     pub stream_buffer: String,
     pub input: TurnInput,
     pub output: Option<TurnOutput>,
-    pub image: Option<Image>,
+    pub image: ImageState,
 }
 
 #[derive(Debug, Clone)]
 pub struct WaitingForSummary {
     pub input: TurnInput,
     pub output: TurnOutput,
-    pub image: Image,
+    pub image: Option<Image>,
 }
 
 #[derive(Debug, Clone)]
 pub struct InThePast {
     pub completed_turn: usize,
     pub data: TurnData,
+}
+
+#[derive(Debug, Default, Clone)]
+pub enum ImageState {
+    #[default]
+    Pending,
+    Ready(Image),
+    Failed,
 }
 
 impl GameContext {
@@ -165,7 +173,7 @@ impl GameContext {
                     self.sub_state = WaitingForOutput {
                         input,
                         output: None,
-                        image: None,
+                        image: ImageState::Pending,
                         stream_buffer: "".into(),
                     }
                     .into();
@@ -235,17 +243,19 @@ impl GameContext {
                 self.output_text = output.text.clone();
                 self.output_markdown = markdown::parse(&self.output_text).collect();
 
-                if let Some(image) = image {
-                    self.request_summary(input, output, image)
-                } else {
-                    self.sub_state = WaitingForOutput {
-                        stream_buffer,
-                        input,
-                        output: Some(output),
-                        image: None,
+                match image {
+                    ImageState::Ready(image) => self.request_summary(input, output, Some(image)),
+                    ImageState::Failed => self.request_summary(input, output, None),
+                    ImageState::Pending => {
+                        self.sub_state = WaitingForOutput {
+                            stream_buffer,
+                            input,
+                            output: Some(output),
+                            image: ImageState::Pending,
+                        }
+                        .into();
+                        Ok(Task::none())
                     }
-                    .into();
-                    Ok(Task::none())
                 }
             }
 
@@ -257,14 +267,19 @@ impl GameContext {
                     image,
                 } = self.sub_state.take().try_into_ex()?;
 
-                let id = self.save.append_image(&image.jpeg_bytes)?;
-                self.game.update(
-                    input,
-                    output.clone(),
+                let images = if let Some(image) = image {
+                    let id = self.save.append_image(&image.jpeg_bytes)?;
                     vec![StoredImageInfo {
                         id,
                         caption: image.caption,
-                    }],
+                    }]
+                } else {
+                    vec![]
+                };
+                self.game.update(
+                    input,
+                    output.clone(),
+                    images,
                     summary_msg.map(|s| s.text),
                 )?;
                 self.save.write_game_data(&self.game.data)?;
@@ -285,27 +300,44 @@ impl GameContext {
             }
 
             ImageReady(generation, image) => {
-                let img = {
-                    if generation < self.current_generation {
-                        return Ok(Task::none());
+                if generation < self.current_generation {
+                    return Ok(Task::none());
+                }
+                let Ok(img) = image else {
+                    if let Some(img_data) = &mut self.image_data {
+                        img_data.is_current = false;
                     }
-                    let Ok(output) = image else {
-                        if let Some(img_data) = &mut self.image_data {
-                            img_data.is_current = false;
+                    warn!(
+                        "{}",
+                        indoc::formatdoc! {
+                         "
+                            There was an error with the image model.
+                            This can happen. Try again. If you're on Flux2, try Flux1.
+                            Details:
+                            {:?}",image
                         }
-                        warn!(
-                            "{}",
-                            indoc::formatdoc! {
-                             "
-                                There was an error with the image model.
-                                This can happen. Try again. If you're on Flux2, try Flux1.
-                                Details:
-                                {:?}",image
-                            }
-                        );
-                        return Ok(Task::none());
-                    };
-                    output
+                    );
+
+                    let WaitingForOutput {
+                        input,
+                        output,
+                        image: _,
+                        stream_buffer,
+                    } = self.sub_state.take().try_into_ex()?;
+
+                    if let Some(output) = output {
+                        return self.request_summary(input, output, None);
+                    } else {
+                        self.sub_state = WaitingForOutput {
+                            input,
+                            output: None,
+                            image: ImageState::Failed,
+                            stream_buffer,
+                        }
+                        .into();
+                    }
+
+                    return Ok(Task::none());
                 };
                 let WaitingForOutput {
                     input,
@@ -321,12 +353,12 @@ impl GameContext {
                 });
 
                 if let Some(output) = output {
-                    self.request_summary(input, output, img)
+                    self.request_summary(input, output, Some(img))
                 } else {
                     self.sub_state = WaitingForOutput {
                         input,
                         output: None,
-                        image: Some(img),
+                        image: ImageState::Ready(img),
                         stream_buffer,
                     }
                     .into();
@@ -441,7 +473,7 @@ impl GameContext {
         &mut self,
         input: TurnInput,
         output: TurnOutput,
-        image: Image,
+        image: Option<Image>,
     ) -> Result<Task<Message>> {
         self.sub_state = WaitingForSummary {
             input,
@@ -467,7 +499,7 @@ impl GameContext {
         self.sub_state = WaitingForOutput {
             input,
             output: None,
-            image: None,
+            image: ImageState::Pending,
             stream_buffer: "".into(),
         }
         .into();
