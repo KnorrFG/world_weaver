@@ -10,9 +10,9 @@ use crate::{
 use async_stream::try_stream;
 use color_eyre::{
     Result,
-    eyre::{Context, bail, ensure, eyre},
+    eyre::{Context, ensure, eyre},
 };
-use log::{debug, warn};
+use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use tokio::{pin, sync::oneshot};
 use tokio_stream::{Stream, StreamExt};
@@ -111,9 +111,9 @@ impl Game {
         let stream = try_stream! {
             let output = {
                 let stream = llm.send_request_stream(req);
-                let mut soi_finder = StreamFinder::new("<<<SOID>>>");
-                let mut eoo_finder = StreamFinder::new("<<<EOO>>>");
-                let mut eoi_finder = StreamFinder::new("<<<EOIC>>>");
+                let mut soi_finder = StreamFinder::new(TAG_IMAGE_DESCRIPTION_START);
+                let mut eoo_finder = StreamFinder::new(TAG_OUTPUT_END);
+                let mut eoi_finder = StreamFinder::new(TAG_OUTPUT_START);
                 let mut discarded_prefix = String::new();
                 let mut image_description = String::new();
                 let mut post_eoi_text = None;
@@ -129,6 +129,7 @@ impl Game {
                                             MatchResult::Blocked => {},
                                             MatchResult::StopTokenMatched { pre_token_text, post_token_text } => {
                                                 discarded_prefix.push_str(&pre_token_text);
+                                                image_description.push_str(TAG_IMAGE_DESCRIPTION_START);
                                                 image_description.push_str(&post_token_text);
                                                 mode = SendToLLMState::ParsingImageDescription;
                                             },
@@ -150,7 +151,14 @@ impl Game {
                                                 post_eoi_text = Some(post_token_text);
                                                 mode = SendToLLMState::StreamingOutputText;
 
-                                                let description = parse_image_description(&image_description).context("parsing image description")?;
+                                                let description = parse_image_description(&image_description)
+                                                    .inspect_err(|e| {
+                                                        error!(
+                                                            "Failed to parse streamed LLM image prefix:\n{}\nParse error: {e:?}",
+                                                            image_description,
+                                                        )
+                                                    })
+                                                    .context("parsing image description")?;
                                                 debug!("Sending image description");
                                                 _ = tx_img_description.take().expect("finished parsing image description a second time. This should be impossible. It's a bug").send(description);
                                             },
@@ -456,15 +464,48 @@ async fn create_new_summary(
     Ok(response)
 }
 
+fn split_tag<'a>(src: &'a str, start_tag: &str, end_tag: &str, field_name: &str) -> Result<(&'a str, &'a str)> {
+    let (_, tail) = src
+        .split_once(start_tag)
+        .ok_or_else(|| eyre!("no {start_tag} for {field_name} in output"))?;
+    let (content, tail) = tail
+        .split_once(end_tag)
+        .ok_or_else(|| eyre!("no {end_tag} for {field_name} in output"))?;
+    Ok((content, tail))
+}
+
+fn parse_actions(src: &str) -> Result<Vec<String>> {
+    let mut actions = Vec::new();
+    let mut tail = src;
+
+    while let Some((_, rest)) = tail.split_once(TAG_ACTION_START) {
+        let (action, new_tail) = rest
+            .split_once(TAG_ACTION_END)
+            .ok_or_else(|| eyre!("missing {TAG_ACTION_END} in output"))?;
+        actions.push(action.trim().to_string());
+        tail = new_tail;
+    }
+
+    Ok(actions)
+}
+
 fn parse_image_description(src: &str) -> Result<ImageDescription> {
-    let parts = src.split("<<<EOID>>>").collect::<Vec<&str>>();
-    let [description, caption] = parts[..] else {
-        bail!("No <<<EOID>>> in output");
-    };
+    let (description, tail) = split_tag(
+        src,
+        TAG_IMAGE_DESCRIPTION_START,
+        TAG_IMAGE_DESCRIPTION_END,
+        "image description",
+    )?;
+    let (caption, _) = split_tag(
+        tail,
+        TAG_IMAGE_CAPTION_START,
+        TAG_IMAGE_CAPTION_END,
+        "image caption",
+    )?;
 
     Ok(ImageDescription {
-        description: description.into(),
-        caption: caption.into(),
+        description: description.trim().into(),
+        caption: caption.trim().into(),
     })
 }
 
@@ -514,6 +555,18 @@ pub struct GameData {
 }
 
 const MAX_WORDS: usize = 1000;
+const TAG_IMAGE_DESCRIPTION_START: &str = "<image_description>";
+const TAG_IMAGE_DESCRIPTION_END: &str = "</image_description>";
+const TAG_IMAGE_CAPTION_START: &str = "<image_caption>";
+const TAG_IMAGE_CAPTION_END: &str = "</image_caption>";
+const TAG_OUTPUT_START: &str = "<output>";
+const TAG_OUTPUT_END: &str = "</output>";
+const TAG_SECRET_INFO_START: &str = "<secret_info>";
+const TAG_SECRET_INFO_END: &str = "</secret_info>";
+const TAG_PROPOSED_ACTIONS_START: &str = "<proposed_actions>";
+const TAG_PROPOSED_ACTIONS_END: &str = "</proposed_actions>";
+const TAG_ACTION_START: &str = "<action>";
+const TAG_ACTION_END: &str = "</action>";
 
 impl GameData {
     pub fn construct_request(&self, input: &TurnInput, image_gen_extra_infos: &str) -> Request {
@@ -569,40 +622,43 @@ impl GameData {
            If I provide neither of those, it just means you should generate more output for the
            previous input.
 
-           The response should have the following structure:
+           The response should have the following XML structure:
            --- START EXAMPLE ---
-           <<<SOID>>>
+           <image_description>
            *The image description* will be passed to an image model to generate an image.
            Unless the most important part of the current turn is a special place, scenery or
            object, the image should show a single character that is currently important.
-           <<<EOID>>>
+           </image_description>
+           <image_caption>
            *A short image caption* will be displayed below the image 1-5 words
-           <<<EOIC>>>
+           </image_caption>
+           <output>
            *The output*: text that is displayed to me, this should be roughly {MAX_WORDS} words.
            No need for characters to hold endless monologues.
-           <<<EOO>>>
+           </output>
+           <secret_info>
            *Secret info*:. Stuff that is related to output, but hidden from me,
            it's a note for yourself. Keep it real short 500 words at most. Don't repeat
            information here that's already in the inputs or outputs. Use to track relevant
            events that are not in the current scene, to note down hidden intentions, or plan
            for future turns. Leaving this empty, if there is nothing hidden to track, is
            perfectly fine.
-           <<<EOS>>>
-           Proposed Action 1
-           <<<EOA>>>
-           Proposed Action 2
-           <<<EOA>>>
-           Proposed Action 3
+           </secret_info>
+           <proposed_actions>
+           <action>Proposed Action 1</action>
+           <action>Proposed Action 2</action>
+           <action>Proposed Action 3</action>
+           </proposed_actions>
            --- END EXAMPLE ---
 
            The above example is explanatory, you are supposed to replace all text within it,
-           except for <<<EOO>>>, <<<EOS>>> and <<<EOA>>>, which are parsing delimiters and
-           need to appear exactly like this on their own lines, they stand for "End of output",
-           "End of Secret" and "end of action" respectively. So your generated output
-           should NOT start with `The output*:`, additionally, it should not have a heading
-           or the turn number. Everything before <<<SOID>>> will be ignored. If you generate
-           thinking output (and you shouldn't), then under no circumstances use <<<SOID>>>
-           in the thinking-output. 
+           except for the XML tags themselves, which are parsing delimiters and must appear
+           exactly as shown. So your generated output should NOT start with `*The output*:`,
+           and it should not have a heading or the turn number. Everything before
+           <image_description> will be ignored. If you generate thinking output (and you
+           shouldn't), then do not use any of these XML tags in that thinking output.
+           The content inside the tags must be plain text. Do not emit additional tags,
+           attributes, comments, CDATA, markdown code fences, or escaped XML entities.
 
            The Proposed Actions should be one sentence each, describing 3 different
            plausable next actions for {player} to take. They should not be prefixed
@@ -717,18 +773,42 @@ impl TurnOutput {
     fn to_llm_format(&self) -> String {
         let mut output = String::new();
 
-        output.push_str("\n<<<SOID>>>\n");
+        output.push_str("\n");
+        output.push_str(TAG_IMAGE_DESCRIPTION_START);
+        output.push_str("\n");
         output.push_str(&self.image_description);
-        output.push_str("\n<<<EOID>>>\n");
+        output.push_str("\n");
+        output.push_str(TAG_IMAGE_DESCRIPTION_END);
+        output.push_str("\n");
+        output.push_str(TAG_IMAGE_CAPTION_START);
+        output.push_str("\n");
         output.push_str(&self.image_caption);
-        output.push_str("\n<<<EOIC>>>\n");
+        output.push_str("\n");
+        output.push_str(TAG_IMAGE_CAPTION_END);
+        output.push_str("\n");
+        output.push_str(TAG_OUTPUT_START);
+        output.push_str("\n");
 
         output.push_str(&self.text);
 
-        output.push_str("\n<<<EOO>>>\n");
+        output.push_str("\n");
+        output.push_str(TAG_OUTPUT_END);
+        output.push_str("\n");
+        output.push_str(TAG_SECRET_INFO_START);
+        output.push_str("\n");
         output.push_str(&self.secret_info);
-        output.push_str("\n<<<EOS>>>\n");
-        output.push_str(&self.proposed_next_actions.join("\n<<<EOA>>>\n"));
+        output.push_str("\n");
+        output.push_str(TAG_SECRET_INFO_END);
+        output.push_str("\n");
+        output.push_str(TAG_PROPOSED_ACTIONS_START);
+        output.push_str("\n");
+        for action in &self.proposed_next_actions {
+            output.push_str(TAG_ACTION_START);
+            output.push_str(action);
+            output.push_str(TAG_ACTION_END);
+            output.push_str("\n");
+        }
+        output.push_str(TAG_PROPOSED_ACTIONS_END);
 
         output
     }
@@ -738,35 +818,37 @@ impl TryFrom<OutputMessage> for TurnOutput {
     type Error = color_eyre::Report;
 
     fn try_from(value: OutputMessage) -> std::result::Result<Self, Self::Error> {
-        let parts = value.text.split("<<<SOID>>>").collect::<Vec<&str>>();
-        let tail = parts.last().ok_or(eyre!("impossible?"))?;
-        let parts = tail.split("<<<EOID>>>").collect::<Vec<&str>>();
-        let [image_description, tail] = parts[..] else {
-            bail!("no <<<EOID>>> in output");
-        };
-
-        let parts = tail.split("<<<EOIC>>>").collect::<Vec<&str>>();
-        let [image_caption, tail] = parts[..] else {
-            bail!("no <<<EOIC>>> in output");
-        };
-
-        let parts = tail.split("<<<EOO>>>").collect::<Vec<&str>>();
-        let [output, tail] = parts[..] else {
-            bail!("No <<<EOO>>> in output");
-        };
+        let (image_description, tail) = split_tag(
+            &value.text,
+            TAG_IMAGE_DESCRIPTION_START,
+            TAG_IMAGE_DESCRIPTION_END,
+            "image description",
+        )
+        .inspect_err(|e| error!("Failed to parse LLM message:\n{}\nParse error: {e:?}", value.text))?;
+        let (image_caption, tail) = split_tag(
+            tail,
+            TAG_IMAGE_CAPTION_START,
+            TAG_IMAGE_CAPTION_END,
+            "image caption",
+        )
+        .inspect_err(|e| error!("Failed to parse LLM message:\n{}\nParse error: {e:?}", value.text))?;
+        let (output, tail) = split_tag(tail, TAG_OUTPUT_START, TAG_OUTPUT_END, "output")
+            .inspect_err(|e| error!("Failed to parse LLM message:\n{}\nParse error: {e:?}", value.text))?;
 
         let res = (|| {
-            let parts = tail.split("<<<EOS>>>").collect::<Vec<&str>>();
-            let (secret, tail) = if parts.len() == 1 {
-                ("", parts[0])
-            } else {
-                (parts[0], parts[1])
-            };
-
-            let proposed_next_actions: Vec<String> = tail
-                .split("<<<EOA>>>")
-                .map(|s| s.trim().to_string())
-                .collect();
+            let (secret, tail) = split_tag(
+                tail,
+                TAG_SECRET_INFO_START,
+                TAG_SECRET_INFO_END,
+                "secret info",
+            )?;
+            let (actions, _) = split_tag(
+                tail,
+                TAG_PROPOSED_ACTIONS_START,
+                TAG_PROPOSED_ACTIONS_END,
+                "proposed actions",
+            )?;
+            let proposed_next_actions = parse_actions(actions)?;
 
             ensure!(
                 proposed_next_actions.len() >= N_PROPOSED_OPTIONS,
@@ -805,6 +887,72 @@ impl TryFrom<OutputMessage> for TurnOutput {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_turn_output_from_xml_format() {
+        let raw = r#"
+ignored prefix
+<image_description>
+hero portrait
+</image_description>
+<image_caption>
+Night Watch
+</image_caption>
+<output>
+You step into the alley.
+</output>
+<secret_info>
+The watcher is armed.
+</secret_info>
+<proposed_actions>
+<action>Move closer.</action>
+<action>Hide behind crates.</action>
+<action>Call out softly.</action>
+</proposed_actions>
+"#;
+
+        let parsed = TurnOutput::try_from(OutputMessage {
+            text: raw.into(),
+            input_tokens: 12,
+            output_tokens: 34,
+        })
+        .unwrap();
+
+        assert_eq!(parsed.image_description, "hero portrait");
+        assert_eq!(parsed.image_caption, "Night Watch");
+        assert_eq!(parsed.text, "You step into the alley.");
+        assert_eq!(parsed.secret_info, "The watcher is armed.");
+        assert_eq!(
+            parsed.proposed_next_actions,
+            [
+                String::from("Move closer."),
+                String::from("Hide behind crates."),
+                String::from("Call out softly.")
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_streamed_image_description_prefix() {
+        let raw = r#"
+<image_description>
+hero portrait
+</image_description>
+<image_caption>
+Night Watch
+</image_caption>
+"#;
+
+        let parsed = parse_image_description(raw).unwrap();
+
+        assert_eq!(parsed.description, "hero portrait");
+        assert_eq!(parsed.caption, "Night Watch");
     }
 }
 
