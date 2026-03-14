@@ -8,8 +8,8 @@ use iced::{
     alignment::{Horizontal, Vertical},
     padding,
     widget::{
-        self, Button, Column, Container, button, container, markdown, operation, row,
-        scrollable, space,
+        self, Button, Column, Container, button, container, markdown, operation, row, scrollable,
+        space,
         text_editor::{self, Edit},
         text_input,
     },
@@ -344,8 +344,12 @@ impl State for Playing {
             .align_x(Horizontal::Center),
             container(
                 scrollable(
-                    container(widget::column(main_col).align_x(Horizontal::Center))
-                        .padding(padding::all(10.).right(20.)),
+                    container(
+                        widget::column(main_col)
+                            .align_x(Horizontal::Center)
+                            .spacing(5.)
+                    )
+                    .padding(padding::all(10.).right(20.)),
                 )
                 .id(playing_output_scroll_id())
                 .on_scroll(|viewport| {
@@ -355,7 +359,10 @@ impl State for Playing {
             .width(700)
             .padding(10)
             .style(|_theme| container::background(Color::from_rgb(0.95, 0.95, 0.95))),
-            sidebar.align_x(Horizontal::Center).height(Length::Fill)
+            sidebar
+                .align_x(Horizontal::Center)
+                .height(Length::Fill)
+                .spacing(5.)
         ]
         .spacing(20)
         .align_y(Vertical::Top);
