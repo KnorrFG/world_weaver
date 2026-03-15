@@ -4,37 +4,9 @@ World Weaver is an AI-Guided "Choose Your Own Adventure" game, also known as "In
 
 ![screenshot of world_weaver](doc/screen_short_turn1.png)
 
-While this program is free, you will need to pay for the AI. There are multiple supported
-LLMs and image models. Currently, for LLMs, there are Claude Sonnet, Claude Haiku, Aion1
-and Aion2. For the image model you can choose between Flux1 and Flux2.
-
-Depending on what you want to use, you need accounts and API-keys at
-<https://claude.com/platform/api>, <https://openrouter.ai/>, <https://replicate.com/>
-and possibly <https://bfl.ai/>. The API keys must then be configured in the game's option menu.
-
-Flux1 is slower (~1 minute per request). Flux2 is faster (~20s) and moderated.
-Using Flux2 via Black Forest Labs costs roughly twice as much as using it via Replicate.
-
-
-## Installation
-
-I wrote this mostly for myself, and now publish it basically as a "Portfolio-piece", so
-I didn't put effort into stuff I don't need. Like prebuild binaries.
-If you're not a programmer, but want to use it, do the following:
-
-1. Install Rust: <https://rustup.rs/> (always use the latest stable version)
-2. Open a new terminal and run
-    ```
-      cargo install --locked --git https://github.com/KnorrFG/world_weaver world_weaver
-    ```
-3. Now you can run this by simply typing `world_weaver` into your terminal
-4. You might have to install additional dependencies that are required by [iced](https://github.com/iced-rs/iced),
-   Error messages when attempting to start World Weaver should be instructive.
-   I'd love to be more precise here, but the iced dependencies vary by platform, and
-   I couldn't find an explicit list.
-
-**Disclaimer:** I only tested on Arch-Linux. The code *should* be platform independent,
-but honestly, if it works flawlessly on Mac or Windows, I'd be surprised.
+This game is similar to playing D&D by yourself, where an LLM is your game master, but one that
+listens to you, if you want to overwrite a decision. It's providing you the means
+to explore any setting that interests you in an interesting interactive way.
 
 ## Usage
 
@@ -64,6 +36,44 @@ a second:
 - The change turn button gives you a menu where you can describe how the current turn should change,
   then the LLM will take a new attempt at it. I use it occasionally, when the LLM did something I
   fundamentally disliked.
+
+## Installation
+
+I wrote this mostly for myself, and now publish it basically as a "Portfolio-piece", so
+I didn't put effort into stuff I don't need. Like prebuild binaries.
+If you're not a programmer, but want to use it, do the following:
+
+1. Install Rust: <https://rustup.rs/> (always use the latest stable version)
+2. Open a new terminal and run
+    ```
+      cargo install --locked --git https://github.com/KnorrFG/world_weaver world_weaver
+    ```
+3. Now you can run this by simply typing `world_weaver` into your terminal
+4. You might have to install additional dependencies that are required by [iced](https://github.com/iced-rs/iced),
+   Error messages when attempting to start World Weaver should be instructive.
+   I'd love to be more precise here, but the iced dependencies vary by platform, and
+   I couldn't find an explicit list.
+
+**Disclaimer:** I only tested on Arch-Linux. The code *should* be platform independent,
+but honestly, if it works flawlessly on Mac or Windows, I'd be surprised.
+
+## AI / Costs
+
+While this program is free, you will need to pay for the AI. There are multiple supported
+LLMs and image models. Currently, for LLMs, there are Claude Sonnet, Claude Haiku, Aion1
+and Aion2. For the image model you can choose between Flux1 and Flux2.
+
+Depending on what you want to use, you need accounts and API-keys at
+<https://claude.com/platform/api>, <https://openrouter.ai/>, <https://replicate.com/>
+and possibly <https://bfl.ai/>. The API keys must then be configured in the game's option menu.
+
+Flux1 is slower (~1 minute per request). Flux2 is faster (~20s) but moderated, and that
+moderation is quite trigger happy.
+Using Flux2 via Black Forest Labs costs roughly twice as much as using it via Replicate.
+
+Claude Haiku and Aion-2 are much cheaper than Claude Sonette and Aion-1, but they also
+are worse at following many instructions at once, and more prone to contradicting themselves.
+
 
 ## For Devs
 
