@@ -4,12 +4,16 @@ World Weaver is an AI-Guided "Choose Your Own Adventure" game, also known as "In
 
 ![screenshot of world_weaver](doc/screen_short_turn1.png)
 
-While this program is free, you will need to pay for the AI. The used LLM is Claude Sonnet 4.5.
-For the image model you can choose between Flux1 and Flux2. To play you need to create
-accounts and API-keys at <https://claude.com/platform/api> and <https://replicate.com/>.
-You can also use Flux2 hosted by Black Forrest Labs, but that costs roughly twice as much
-as using Flux2 via Replicate. The API keys must then be configured in the game's option menu.
+While this program is free, you will need to pay for the AI. There are multiple supported
+LLMs and image models. Currently, for LLMs, there are Claude Sonnet, Claude Haiku, Aion1
+and Aion2. For the image model you can choose between Flux1 and Flux2.
+
+Depending on what you want to use, you need accounts and API-keys at
+<https://claude.com/platform/api>, <https://openrouter.ai/>, <https://replicate.com/>
+and possibly <https://bfl.ai/>. The API keys must then be configured in the game's option menu.
+
 Flux1 is slower (~1 minute per request). Flux2 is faster (~20s) and moderated.
+Using Flux2 via Black Forest Labs costs roughly twice as much as using it via Replicate.
 
 
 ## Installation

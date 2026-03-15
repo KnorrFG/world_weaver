@@ -17,9 +17,14 @@ reqwest requires tokio. Nothing is thread/async-safe. The code is modeled
 in a way that makes that unnecessary, which I like much more than worrying about
 synchronization everywhere.
 
+The stream parsing logic of `send_to_llm` lives in submodules.
+The state machine that consumes the streamed LLM output is in *engine/src/game/turn_stream_processor.rs*.
+The parser and serializer for the final structured output are in *engine/src/game/turn_output.rs*.
+The custom stop-token matcher used by the stream parser is in *engine/src/game/stream_finder.rs*.
+
 ## AI Models
 
-An LLM is anything that implements `llm::LLM`. Currently, there are two models. They are
+An LLM is anything that implements `llm::LLM`. Currently, there are multiple models. They are
 identified by `llm::ProvidedModel`. Each `ProvidedModel` has an `llm::ModelProvider`.
 Those are used in the GUI to automatically generate the options menu. Also, `ProvidedModel`
 is used to instantiate an LLM. To add another LLM, you need to create a new variant of
@@ -56,8 +61,8 @@ The `world_description` is everything you type into the World-Editor,
 `pc` is the player characters name. It is assumed that the `world_description`
 contains a character of that name.
 
-Every 8 turns, the world-description, the last summary (if it exists) and the
-inputs and outputs of the last 8 turns will be sent to the LLM to update/generate
+Every 5 turns, the world-description, the last summary (if it exists) and the
+inputs and outputs of the last 5 turns will be sent to the LLM to update/generate
 a new summary. Those summaries are stored in the `summaries` field.
 
 A `TurnData` contains all relevant inputs and ouputs of a single turn.
@@ -143,10 +148,11 @@ pub struct GameContext {
     pub sub_state: SubState,
     pub output_text: String,
     pub current_generation: usize,
+    pub output_scroll_y: f32,
 
     // UI helpers, not important for internal logic
     pub output_markdown: Vec<markdown::Item>,
-    pub image_data: Option<(ImgHandle, String)>,
+    pub image_data: Option<ImageData>,
 }
 ```
 
@@ -160,8 +166,8 @@ pub enum SubState {
     #[default]
     Uninit,
     Complete(Complete),
-    WaitingForOutput(WaitingForOutput),
-    WaitingForSummary(WaitingForSummary),
+    WaitingForOutput(PendingTurn),
+    WaitingForSummary(FinalizingTurn),
     InThePast(InThePast),
 }
 ```
@@ -172,12 +178,18 @@ not the latest available one. All other substates should be clear. Most methods
 in the `GameContext` are called somewhere in the `Playing` state, so it makes more
 sense to look at that.
 
+The `PendingTurn` type is in *gui/src/context/game_context/pending_turn.rs*. It keeps
+track of the output/image join while a turn is still being generated. `FinalizingTurn`
+is the same idea, but after the output is complete and before the summary/update step
+has finished.
+
 `output_markdown` needs to be parsed from the `output_text`. Since I don't want
 to do this in `Playing::view` everytime, I do it here. `image_data` contains the
-image in a form that iced can render directly (the `ImgHandle`) and the image's
-caption. Parsing the image bytes into an `ImgHandle` is also something that I don't
-want to do on every `Playing::view` call, so it's done here. The `output_text`
-holds the turns output as it's coming in from the stream.
+image in a form that iced can render directly (the `ImgHandle`), the image's
+caption and whether that image belongs to the current turn. Parsing the image
+bytes into an `ImgHandle` is also something that I don't want to do on every
+`Playing::view` call, so it's done here. The `output_text` holds the turns
+output as it's coming in from the stream.
 
 The `current_generation` field is there for error handling. If the LLM violates
 the output format or Flux2, in all its wisdom (/s),
@@ -187,3 +199,6 @@ the invalid turn might still come in. So we mark those with a generation.
 When an error occurs, we reset the substate, increase the generation, and ignore
 all events from older generations. 
 
+The stream parser is a moderately careful about transport errors. If the stream ends
+before the final message is complete, that's an error. If the message is already
+complete, then later transport noise is ignored.
