@@ -1,3 +1,6 @@
+//! This is a tiny state machine that searches a text stream for a stop token.
+//! It is written for incremental processing, so partial matches can span multiple chunks.
+
 pub struct StreamFinder {
     target: Vec<char>,
     current_pos: usize,
