@@ -20,6 +20,12 @@ use tokio_stream::{Stream, StreamExt};
 mod stream_finder;
 
 const SUMMARY_INTERVAL: usize = 5;
+const IMAGE_DESCRIPTION: &str = "[[[IMAGE DESCRIPTION]]]";
+const IMAGE_DESCRIPTION_STOPS: &str = "[[[IMAGE DESCRIPTION STOPS]]]";
+const IMAGE_CAPTION_ENDS: &str = "[[[IMAGE CAPTION ENDS]]]";
+const OUTPUT_STOPS: &str = "[[[OUTPUT STOPS]]]";
+const SECRET_STOPS: &str = "[[[SECRET STOPS]]]";
+const ACTION_BREAK: &str = "[[[ACTION BREAK]]]";
 
 pub struct Game {
     pub llm: LLMBox,
@@ -111,103 +117,106 @@ impl Game {
         let stream = try_stream! {
             let output = {
                 let stream = llm.send_request_stream(req);
-                let mut soi_finder = StreamFinder::new(TAG_IMAGE_DESCRIPTION_START);
-                let mut eoo_finder = StreamFinder::new(TAG_OUTPUT_END);
-                let mut eoi_finder = StreamFinder::new(TAG_OUTPUT_START);
+                let mut soi_finder = StreamFinder::new(IMAGE_DESCRIPTION);
+                let mut eoo_finder = StreamFinder::new(OUTPUT_STOPS);
+                let mut eoi_finder = StreamFinder::new(IMAGE_CAPTION_ENDS);
                 let mut discarded_prefix = String::new();
                 let mut image_description = String::new();
                 let mut post_eoi_text = None;
 
                 pin!(stream);
                 let output = loop {
-                    if let Some(e) = stream.try_next().await.context("Top level try_next")? {
-                        match e {
-                            ResponseFragment::TextDelta(f) => {
-                                match mode {
-                                    SendToLLMState::LookingForStartOfImageDescription => {
-                                        match soi_finder.process(&f) {
-                                            MatchResult::Blocked => {},
-                                            MatchResult::StopTokenMatched { pre_token_text, post_token_text } => {
-                                                discarded_prefix.push_str(&pre_token_text);
-                                                image_description.push_str(TAG_IMAGE_DESCRIPTION_START);
-                                                image_description.push_str(&post_token_text);
-                                                mode = SendToLLMState::ParsingImageDescription;
-                                            },
-                                            MatchResult::CheckedOutput(output) => {
-                                                discarded_prefix.push_str(&output);
-                                            },
+                    let e = stream
+                        .try_next()
+                        .await
+                        .context("Top level try_next")?
+                        .ok_or_else(|| eyre!("stream ended before message completion"))?;
+                    match e {
+                        ResponseFragment::TextDelta(f) => {
+                            match mode {
+                                SendToLLMState::LookingForStartOfImageDescription => {
+                                    match soi_finder.process(&f) {
+                                        MatchResult::Blocked => {},
+                                        MatchResult::StopTokenMatched { pre_token_text, post_token_text } => {
+                                            discarded_prefix.push_str(&pre_token_text);
+                                            image_description.push_str(&post_token_text);
+                                            mode = SendToLLMState::ParsingImageDescription;
+                                        },
+                                        MatchResult::CheckedOutput(output) => {
+                                            discarded_prefix.push_str(&output);
+                                        },
+                                    }
+                                }
+                                SendToLLMState::ParsingImageDescription => {
+                                    match eoi_finder.process(&f) {
+                                        MatchResult::Blocked => {},
+                                        MatchResult::CheckedOutput(o) => {
+                                            image_description.push_str(&o);
+                                        },
+                                        MatchResult::StopTokenMatched {
+                                            pre_token_text,
+                                            post_token_text } => {
+                                            image_description.push_str(&pre_token_text);
+                                            post_eoi_text = Some(post_token_text);
+                                            mode = SendToLLMState::StreamingOutputText;
+
+                                            let description = parse_image_description(&image_description)
+                                                .inspect_err(|e| {
+                                                    error!(
+                                                        "Failed to parse streamed LLM image prefix:\n{}\nParse error: {e:?}",
+                                                        image_description,
+                                                    )
+                                                })
+                                                .context("parsing image description")?;
+                                            debug!("Sending image description");
+                                            _ = tx_img_description.take().expect("finished parsing image description a second time. This should be impossible. It's a bug").send(description);
+                                        },
+                                    }
+                                },
+                                SendToLLMState::StreamingOutputText => {
+                                    match eoo_finder.process(&f) {
+                                        MatchResult::Blocked => {}
+                                        MatchResult::CheckedOutput(output) => {
+                                            if let Some(mut prefix) = post_eoi_text.take() {
+                                                prefix.push_str(&output);
+                                                yield prefix;
+
+                                            } else {
+                                                yield output;
+                                            }
+                                        }
+                                        MatchResult::StopTokenMatched{
+                                            pre_token_text: processed,
+                                            post_token_text: _,
+                                        } => {
+                                            if !processed.is_empty() {
+                                                yield processed;
+                                            }
+
+                                            mode = SendToLLMState::FinishingUp
                                         }
                                     }
-                                    SendToLLMState::ParsingImageDescription => {
-                                        match eoi_finder.process(&f) {
-                                            MatchResult::Blocked => {},
-                                            MatchResult::CheckedOutput(o) => {
-                                                image_description.push_str(&o);
-                                            },
-                                            MatchResult::StopTokenMatched {
-                                                pre_token_text,
-                                                post_token_text } => {
-                                                image_description.push_str(&pre_token_text);
-                                                post_eoi_text = Some(post_token_text);
-                                                mode = SendToLLMState::StreamingOutputText;
-
-                                                let description = parse_image_description(&image_description)
-                                                    .inspect_err(|e| {
-                                                        error!(
-                                                            "Failed to parse streamed LLM image prefix:\n{}\nParse error: {e:?}",
-                                                            image_description,
-                                                        )
-                                                    })
-                                                    .context("parsing image description")?;
-                                                debug!("Sending image description");
-                                                _ = tx_img_description.take().expect("finished parsing image description a second time. This should be impossible. It's a bug").send(description);
-                                            },
-                                        }
-                                    },
-                                    SendToLLMState::StreamingOutputText => {
-                                        match eoo_finder.process(&f) {
-                                            MatchResult::Blocked => {}
-                                            MatchResult::CheckedOutput(output) => {
-                                                if let Some(mut prefix) = post_eoi_text.take() {
-                                                    prefix.push_str(&output);
-                                                    yield prefix;
-
-                                                } else {
-                                                    yield output;
-                                                }
-                                            }
-                                            MatchResult::StopTokenMatched{
-                                                pre_token_text: processed,
-                                                post_token_text: _,
-                                            } => {
-                                                if !processed.is_empty() {
-                                                    yield processed;
-                                                }
-
-                                                mode = SendToLLMState::FinishingUp
-                                            }
-                                        }
-                                    },
-                                    SendToLLMState::FinishingUp => {},
-                                }
+                                },
+                                SendToLLMState::FinishingUp => {},
                             }
-                            ResponseFragment::MessageComplete(m) => {
-                                debug!("Output complete:\n{}{}", discarded_prefix, m.text);
-                                let output = TurnOutput::try_from(m).context("parse output")?;
-                                if let Some(tx) = tx_img_description {
-                                    _ = tx.send(ImageDescription {
-                                        description: output.image_description.clone(),
-                                        caption: output.image_caption.clone(),
-                                    });
-                                }
-                                break output;
+                        }
+                        ResponseFragment::MessageComplete(m) => {
+                            debug!("Output complete:\n{}{}", discarded_prefix, m.text);
+                            let output = TurnOutput::try_from(m).context("parse output")?;
+                            if let Some(tx) = tx_img_description {
+                                _ = tx.send(ImageDescription {
+                                    description: output.image_description.clone(),
+                                    caption: output.image_caption.clone(),
+                                });
                             }
+                            break output;
                         }
                     }
                 };
 
-                // this will either error or return None
-                stream.try_next().await.context("expect stream none")?;
+                // After the full message is complete, transport noise is irrelevant.
+                // Some providers reset the connection instead of ending the stream cleanly.
+                let _ = stream.try_next().await;
                 output
             };
             _ = tx_output.send(output);
@@ -464,44 +473,12 @@ async fn create_new_summary(
     Ok(response)
 }
 
-fn split_tag<'a>(src: &'a str, start_tag: &str, end_tag: &str, field_name: &str) -> Result<(&'a str, &'a str)> {
-    let (_, tail) = src
-        .split_once(start_tag)
-        .ok_or_else(|| eyre!("no {start_tag} for {field_name} in output"))?;
-    let (content, tail) = tail
-        .split_once(end_tag)
-        .ok_or_else(|| eyre!("no {end_tag} for {field_name} in output"))?;
-    Ok((content, tail))
-}
-
-fn parse_actions(src: &str) -> Result<Vec<String>> {
-    let mut actions = Vec::new();
-    let mut tail = src;
-
-    while let Some((_, rest)) = tail.split_once(TAG_ACTION_START) {
-        let (action, new_tail) = rest
-            .split_once(TAG_ACTION_END)
-            .ok_or_else(|| eyre!("missing {TAG_ACTION_END} in output"))?;
-        actions.push(action.trim().to_string());
-        tail = new_tail;
-    }
-
-    Ok(actions)
-}
-
 fn parse_image_description(src: &str) -> Result<ImageDescription> {
-    let (description, tail) = split_tag(
-        src,
-        TAG_IMAGE_DESCRIPTION_START,
-        TAG_IMAGE_DESCRIPTION_END,
-        "image description",
-    )?;
-    let (caption, _) = split_tag(
-        tail,
-        TAG_IMAGE_CAPTION_START,
-        TAG_IMAGE_CAPTION_END,
-        "image caption",
-    )?;
+    let parts = src.split(IMAGE_DESCRIPTION_STOPS).collect::<Vec<&str>>();
+    let [description, caption] = parts[..] else {
+        return Err(eyre!("No {IMAGE_DESCRIPTION_STOPS} in output"));
+    };
+    let caption = caption.split(IMAGE_CAPTION_ENDS).next().unwrap_or(caption).trim();
 
     Ok(ImageDescription {
         description: description.trim().into(),
@@ -555,18 +532,6 @@ pub struct GameData {
 }
 
 const MAX_WORDS: usize = 1000;
-const TAG_IMAGE_DESCRIPTION_START: &str = "<image_description>";
-const TAG_IMAGE_DESCRIPTION_END: &str = "</image_description>";
-const TAG_IMAGE_CAPTION_START: &str = "<image_caption>";
-const TAG_IMAGE_CAPTION_END: &str = "</image_caption>";
-const TAG_OUTPUT_START: &str = "<output>";
-const TAG_OUTPUT_END: &str = "</output>";
-const TAG_SECRET_INFO_START: &str = "<secret_info>";
-const TAG_SECRET_INFO_END: &str = "</secret_info>";
-const TAG_PROPOSED_ACTIONS_START: &str = "<proposed_actions>";
-const TAG_PROPOSED_ACTIONS_END: &str = "</proposed_actions>";
-const TAG_ACTION_START: &str = "<action>";
-const TAG_ACTION_END: &str = "</action>";
 
 impl GameData {
     pub fn construct_request(&self, input: &TurnInput, image_gen_extra_infos: &str) -> Request {
@@ -622,47 +587,47 @@ impl GameData {
            If I provide neither of those, it just means you should generate more output for the
            previous input.
 
-           The response should have the following XML structure:
+           The response should have the following structure:
            --- START EXAMPLE ---
-           <image_description>
+           {IMAGE_DESCRIPTION}
            *The image description* will be passed to an image model to generate an image.
            Unless the most important part of the current turn is a special place, scenery or
            object, the image should show a single character that is currently important.
-           </image_description>
-           <image_caption>
+           {IMAGE_DESCRIPTION_STOPS}
            *A short image caption* will be displayed below the image 1-5 words
-           </image_caption>
-           <output>
+           {IMAGE_CAPTION_ENDS}
            *The output*: text that is displayed to me, this should be roughly {MAX_WORDS} words.
            No need for characters to hold endless monologues.
-           </output>
-           <secret_info>
+           {OUTPUT_STOPS}
            *Secret info*:. Stuff that is related to output, but hidden from me,
            it's a note for yourself. Keep it real short 500 words at most. Don't repeat
            information here that's already in the inputs or outputs. Use to track relevant
            events that are not in the current scene, to note down hidden intentions, or plan
-           for future turns. Leaving this empty, if there is nothing hidden to track, is
-           perfectly fine.
-           </secret_info>
-           <proposed_actions>
-           <action>Proposed Action 1</action>
-           <action>Proposed Action 2</action>
-           <action>Proposed Action 3</action>
-           </proposed_actions>
+           for future turns. This field must never be empty. If there is nothing hidden to
+           track, output exactly `none`.
+           {SECRET_STOPS}
+           Proposed Action 1
+           {ACTION_BREAK}
+           Proposed Action 2
+           {ACTION_BREAK}
+           Proposed Action 3
            --- END EXAMPLE ---
 
            The above example is explanatory, you are supposed to replace all text within it,
-           except for the XML tags themselves, which are parsing delimiters and must appear
-           exactly as shown. So your generated output should NOT start with `*The output*:`,
-           and it should not have a heading or the turn number. Everything before
-           <image_description> will be ignored. If you generate thinking output (and you
-           shouldn't), then do not use any of these XML tags in that thinking output.
-           The content inside the tags must be plain text. Do not emit additional tags,
-           attributes, comments, CDATA, markdown code fences, or escaped XML entities.
+           except for {OUTPUT_STOPS}, {SECRET_STOPS} and {ACTION_BREAK}, which are parsing delimiters and
+           need to appear exactly like this on their own lines. So your generated output
+           should NOT start with `The output*:`, additionally, it should not have a heading
+           or the turn number. Everything before {IMAGE_DESCRIPTION} will be ignored. If you generate
+           thinking output (and you shouldn't), then under no circumstances use {IMAGE_DESCRIPTION}
+           in the thinking-output. 
+           The image description must end with {IMAGE_DESCRIPTION_STOPS}.
+           The image caption must come after that and end with {IMAGE_CAPTION_ENDS}.
 
            The Proposed Actions should be one sentence each, describing 3 different
            plausable next actions for {player} to take. They should not be prefixed
-           with "Proposed action: " or anything else.
+           with "Proposed action: " or anything else. They must be direct actions the player
+           character could take next. Do not put notes, plans, hidden information, narrator
+           commentary, or world-state summaries into the proposed actions.
 
            Here is the description of the world the story plays in, and some some
            instructions about the style:
@@ -774,41 +739,27 @@ impl TurnOutput {
         let mut output = String::new();
 
         output.push_str("\n");
-        output.push_str(TAG_IMAGE_DESCRIPTION_START);
+        output.push_str(IMAGE_DESCRIPTION);
         output.push_str("\n");
         output.push_str(&self.image_description);
         output.push_str("\n");
-        output.push_str(TAG_IMAGE_DESCRIPTION_END);
-        output.push_str("\n");
-        output.push_str(TAG_IMAGE_CAPTION_START);
+        output.push_str(IMAGE_DESCRIPTION_STOPS);
         output.push_str("\n");
         output.push_str(&self.image_caption);
         output.push_str("\n");
-        output.push_str(TAG_IMAGE_CAPTION_END);
-        output.push_str("\n");
-        output.push_str(TAG_OUTPUT_START);
+        output.push_str(IMAGE_CAPTION_ENDS);
         output.push_str("\n");
 
         output.push_str(&self.text);
 
         output.push_str("\n");
-        output.push_str(TAG_OUTPUT_END);
-        output.push_str("\n");
-        output.push_str(TAG_SECRET_INFO_START);
+        output.push_str(OUTPUT_STOPS);
         output.push_str("\n");
         output.push_str(&self.secret_info);
         output.push_str("\n");
-        output.push_str(TAG_SECRET_INFO_END);
+        output.push_str(SECRET_STOPS);
         output.push_str("\n");
-        output.push_str(TAG_PROPOSED_ACTIONS_START);
-        output.push_str("\n");
-        for action in &self.proposed_next_actions {
-            output.push_str(TAG_ACTION_START);
-            output.push_str(action);
-            output.push_str(TAG_ACTION_END);
-            output.push_str("\n");
-        }
-        output.push_str(TAG_PROPOSED_ACTIONS_END);
+        output.push_str(&self.proposed_next_actions.join(&format!("\n{ACTION_BREAK}\n")));
 
         output
     }
@@ -818,37 +769,45 @@ impl TryFrom<OutputMessage> for TurnOutput {
     type Error = color_eyre::Report;
 
     fn try_from(value: OutputMessage) -> std::result::Result<Self, Self::Error> {
-        let (image_description, tail) = split_tag(
-            &value.text,
-            TAG_IMAGE_DESCRIPTION_START,
-            TAG_IMAGE_DESCRIPTION_END,
-            "image description",
-        )
-        .inspect_err(|e| error!("Failed to parse LLM message:\n{}\nParse error: {e:?}", value.text))?;
-        let (image_caption, tail) = split_tag(
-            tail,
-            TAG_IMAGE_CAPTION_START,
-            TAG_IMAGE_CAPTION_END,
-            "image caption",
-        )
-        .inspect_err(|e| error!("Failed to parse LLM message:\n{}\nParse error: {e:?}", value.text))?;
-        let (output, tail) = split_tag(tail, TAG_OUTPUT_START, TAG_OUTPUT_END, "output")
-            .inspect_err(|e| error!("Failed to parse LLM message:\n{}\nParse error: {e:?}", value.text))?;
+        let parts = value.text.split(IMAGE_DESCRIPTION).collect::<Vec<&str>>();
+        let Some(tail) = parts.last().copied() else {
+            let err = eyre!("impossible?");
+            error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
+            return Err(err);
+        };
+        let parts = tail.split(IMAGE_DESCRIPTION_STOPS).collect::<Vec<&str>>();
+        let [image_description, tail] = parts[..] else {
+            let err = eyre!("no {IMAGE_DESCRIPTION_STOPS} in output");
+            error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
+            return Err(err);
+        };
+
+        let parts = tail.split(IMAGE_CAPTION_ENDS).collect::<Vec<&str>>();
+        let [image_caption, tail] = parts[..] else {
+            let err = eyre!("no {IMAGE_CAPTION_ENDS} in output");
+            error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
+            return Err(err);
+        };
+
+        let parts = tail.split(OUTPUT_STOPS).collect::<Vec<&str>>();
+        let [output, tail] = parts[..] else {
+            let err = eyre!("No {OUTPUT_STOPS} in output");
+            error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
+            return Err(err);
+        };
 
         let res = (|| {
-            let (secret, tail) = split_tag(
-                tail,
-                TAG_SECRET_INFO_START,
-                TAG_SECRET_INFO_END,
-                "secret info",
-            )?;
-            let (actions, _) = split_tag(
-                tail,
-                TAG_PROPOSED_ACTIONS_START,
-                TAG_PROPOSED_ACTIONS_END,
-                "proposed actions",
-            )?;
-            let proposed_next_actions = parse_actions(actions)?;
+            let parts = tail.split(SECRET_STOPS).collect::<Vec<&str>>();
+            let (secret, tail) = if parts.len() == 1 {
+                ("", parts[0])
+            } else {
+                (parts[0], parts[1])
+            };
+
+            let proposed_next_actions: Vec<String> = tail
+                .split(ACTION_BREAK)
+                .map(|s| s.trim().to_string())
+                .collect();
 
             ensure!(
                 proposed_next_actions.len() >= N_PROPOSED_OPTIONS,
@@ -895,26 +854,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_turn_output_from_xml_format() {
+    fn parses_turn_output_from_marker_format() {
         let raw = r#"
 ignored prefix
-<image_description>
+[[[IMAGE DESCRIPTION]]]
 hero portrait
-</image_description>
-<image_caption>
+[[[IMAGE DESCRIPTION STOPS]]]
 Night Watch
-</image_caption>
-<output>
+[[[IMAGE CAPTION ENDS]]]
 You step into the alley.
-</output>
-<secret_info>
+[[[OUTPUT STOPS]]]
 The watcher is armed.
-</secret_info>
-<proposed_actions>
-<action>Move closer.</action>
-<action>Hide behind crates.</action>
-<action>Call out softly.</action>
-</proposed_actions>
+[[[SECRET STOPS]]]
+Move closer.
+[[[ACTION BREAK]]]
+Hide behind crates.
+[[[ACTION BREAK]]]
+Call out softly.
 "#;
 
         let parsed = TurnOutput::try_from(OutputMessage {
@@ -941,12 +897,24 @@ The watcher is armed.
     #[test]
     fn parses_streamed_image_description_prefix() {
         let raw = r#"
-<image_description>
 hero portrait
-</image_description>
-<image_caption>
+[[[IMAGE DESCRIPTION STOPS]]]
 Night Watch
-</image_caption>
+"#;
+
+        let parsed = parse_image_description(raw).unwrap();
+
+        assert_eq!(parsed.description, "hero portrait");
+        assert_eq!(parsed.caption, "Night Watch");
+    }
+
+    #[test]
+    fn parses_streamed_image_description_prefix_with_marker() {
+        let raw = r#"
+hero portrait
+[[[IMAGE DESCRIPTION STOPS]]]
+Night Watch
+[[[IMAGE CAPTION ENDS]]]
 "#;
 
         let parsed = parse_image_description(raw).unwrap();

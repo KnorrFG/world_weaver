@@ -82,9 +82,12 @@ impl LLM for OpenAIChat {
                 let mut output_tokens = 0usize;
 
                 while let Some(chunk) = stream.next().await {
-                    let Ok(chunk) = chunk else {
-                        error!("streaming error:\n{chunk:?}");
-                        break;
+                    let chunk = match chunk {
+                        Ok(chunk) => chunk,
+                        Err(err) => {
+                            error!("streaming error:\n{err:?}");
+                            Err(err).context("stream chunk")?
+                        }
                     };
 
                     let text = std::str::from_utf8(&chunk).context("chunk to utf-8")?;
