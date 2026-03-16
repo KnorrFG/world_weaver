@@ -62,6 +62,7 @@ pub mod ui_messages {
         pub enum Playing {
             UpdateActionText(text_editor::Action),
             UpdateGMInstructionText(text_editor::Action),
+            ClearActionEditors,
             ProposedActionButtonPressed(String),
             Submit,
             PrevTurnButtonPressed,

@@ -97,6 +97,10 @@ impl State for Playing {
             UpdateGMInstructionText(action) => {
                 self.update_editor_content(action, EditorId::GMInstruction)
             }
+            ClearActionEditors => {
+                self.reset_action_editors();
+                cmd::none()
+            }
             ProposedActionButtonPressed(s) => {
                 if self.action_text_content.text() == s {
                     cmd::task(Task::done(Submit))
@@ -110,7 +114,6 @@ impl State for Playing {
                     player_action: self.action_text_content.text(),
                     gm_instruction: self.gm_instruction_text_content.text(),
                 };
-                self.reset_action_editors();
                 cmd::task(ctx.generate_new_turn(input))
             }
             PrevTurnButtonPressed => {
@@ -385,6 +388,10 @@ impl State for Playing {
 
     fn clone(&self) -> Box<dyn State> {
         Box::new(Clone::clone(self))
+    }
+
+    fn is_playing(&self) -> bool {
+        true
     }
 }
 

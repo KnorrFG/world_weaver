@@ -71,6 +71,13 @@ impl Gui {
     fn try_update(&mut self, message: Message) -> Result<Task<Message>> {
         match message {
             Message::Ui(ui_message) => {
+                if matches!(
+                    ui_message,
+                    message::UiMessage::Playing(message::ui_messages::Playing::ClearActionEditors)
+                ) && !self.state.is_playing()
+                {
+                    return Ok(Task::none());
+                }
                 let cmd = self.state.update(ui_message, &mut self.ctx)?;
                 let mut task = cmd
                     .task

@@ -7,7 +7,7 @@ use log::warn;
 
 use crate::{
     TryIntoExt,
-    message::{ContextMessage, Message},
+    message::{ContextMessage, Message, ui_messages::Playing as PlayingMessage},
 };
 use engine::{
     game::{
@@ -190,7 +190,7 @@ impl GameContext {
                 }
                 .into();
                 self.current_generation += 1;
-                Ok(Task::none())
+                Ok(Task::done(PlayingMessage::ClearActionEditors.into()))
             }
 
             NewTextFragment(generation, t) => {

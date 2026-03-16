@@ -125,17 +125,25 @@ impl Game {
 
                 pin!(stream);
                 let output = 'receive: loop {
-                    let fragment = stream
-                        .try_next()
-                        .await
-                        .context("Top level try_next")?
-                        .ok_or_else(|| {
+                    let fragment = match stream.try_next().await {
+                        Ok(Some(fragment)) => fragment,
+                        Ok(None) => {
                             error!(
-                                "LLM stream ended before message completion. Processor state: {}",
-                                processor.status_summary()
+                                "LLM stream ended before message completion. Processor state: {}. Received text so far:\n{}",
+                                processor.status_summary(),
+                                processor.received_text(),
                             );
-                            eyre!("stream ended before message completion")
-                        })?;
+                            Err(eyre!("stream ended before message completion"))?
+                        }
+                        Err(err) => {
+                            error!(
+                                "LLM stream failed before message completion. Processor state: {}. Received text so far:\n{}\nError: {err:?}",
+                                processor.status_summary(),
+                                processor.received_text(),
+                            );
+                            Err(err).context("Top level try_next")?
+                        }
+                    };
                     for event in processor.push(fragment)? {
                         match event {
                             ProcessorEvent::VisibleText(text) => yield text,
@@ -272,7 +280,10 @@ impl Game {
             } else {
                 pc_init_action
             };
-            let input = TurnInput::player_action(init_action.into());
+            let input = TurnInput {
+                player_action: String::new(),
+                gm_instruction: init_action.into(),
+            };
             StartResultOrData::StartResult(self.send_to_llm(input.clone()), input)
         }
     }
@@ -403,12 +414,30 @@ async fn create_new_summary(
         messages: vec![InputMessage::user(user_message)],
         max_tokens: 3000,
     });
+    let mut received_text = String::new();
 
     let response = loop {
-        if let Some(m) = stream.try_next().await?
-            && let ResponseFragment::MessageComplete(m) = m
-        {
-            break m;
+        let fragment = match stream.try_next().await {
+            Ok(Some(fragment)) => fragment,
+            Ok(None) => {
+                error!(
+                    "Summary stream ended before message completion. Received text so far:\n{}",
+                    received_text
+                );
+                Err(eyre!("summary stream ended before message completion"))?
+            }
+            Err(err) => {
+                error!(
+                    "Summary stream failed before message completion. Received text so far:\n{}\nError: {err:?}",
+                    received_text
+                );
+                Err(err)?
+            }
+        };
+
+        match fragment {
+            ResponseFragment::TextDelta(text) => received_text.push_str(&text),
+            ResponseFragment::MessageComplete(m) => break m,
         }
     };
 

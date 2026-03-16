@@ -139,6 +139,7 @@ impl LLM for OpenAIChat {
                     last_chunk_preview,
                     last_data_line,
                 );
+                Err(eyre!("OpenAI stream ended without [DONE]"))?;
             }
         })
     }

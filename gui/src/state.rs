@@ -30,6 +30,9 @@ pub trait State: fmt::Debug {
     fn update(&mut self, event: UiMessage, ctx: &mut Context) -> Result<StateCommand>;
     fn view<'a>(&'a self, ctx: &'a Context) -> Element<'a, UiMessage>;
     fn clone(&self) -> Box<dyn State>;
+    fn is_playing(&self) -> bool {
+        false
+    }
 }
 
 pub trait StateExt: State + Sized + 'static {

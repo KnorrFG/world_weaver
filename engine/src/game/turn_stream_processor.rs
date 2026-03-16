@@ -23,6 +23,7 @@ pub(super) struct TurnStreamProcessor {
     eoo_finder: StreamFinder,
     discarded_prefix: String,
     image_description: String,
+    received_text: String,
 }
 
 pub(super) enum ProcessorEvent {
@@ -40,23 +41,32 @@ impl TurnStreamProcessor {
             eoo_finder: StreamFinder::new(OUTPUT_STOPS),
             discarded_prefix: String::new(),
             image_description: String::new(),
+            received_text: String::new(),
         }
     }
 
     pub(super) fn push(&mut self, fragment: ResponseFragment) -> Result<Vec<ProcessorEvent>> {
         match fragment {
-            ResponseFragment::TextDelta(f) => self.push_text_delta(f),
+            ResponseFragment::TextDelta(f) => {
+                self.received_text.push_str(&f);
+                self.push_text_delta(f)
+            }
             ResponseFragment::MessageComplete(m) => self.finish_message(m),
         }
     }
 
     pub(super) fn status_summary(&self) -> String {
         format!(
-            "mode={:?}, discarded_prefix_len={}, image_description_len={}",
+            "mode={:?}, discarded_prefix_len={}, image_description_len={}, received_text_len={}",
             self.mode,
             self.discarded_prefix.len(),
             self.image_description.len(),
+            self.received_text.len(),
         )
+    }
+
+    pub(super) fn received_text(&self) -> &str {
+        &self.received_text
     }
 
     fn push_text_delta(&mut self, text: String) -> Result<Vec<ProcessorEvent>> {
