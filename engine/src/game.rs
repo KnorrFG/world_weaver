@@ -18,11 +18,11 @@ use tokio::{pin, sync::oneshot};
 use tokio_stream::{Stream, StreamExt};
 
 mod stream_finder;
-mod turn_stream_processor;
 mod turn_output;
+mod turn_stream_processor;
 
-use turn_stream_processor::{ProcessorEvent, TurnStreamProcessor};
 pub use turn_output::TurnOutput;
+use turn_stream_processor::{ProcessorEvent, TurnStreamProcessor};
 
 const SUMMARY_INTERVAL: usize = 5;
 const IMAGE_DESCRIPTION: &str = "[[[IMAGE DESCRIPTION]]]";
@@ -62,6 +62,11 @@ pub struct AdvanceResult {
     pub image: Pin<Box<dyn Future<Output = Result<Image>> + Send>>,
     pub text_stream: Pin<Box<dyn Stream<Item = Result<String>> + Send>>,
     pub round_output: Pin<Box<dyn Future<Output = Result<TurnOutput>> + Send>>,
+}
+
+enum IncompleteStreamEnd {
+    Eof,
+    Error(color_eyre::Report),
 }
 
 impl Game {
@@ -127,23 +132,20 @@ impl Game {
                 let output = 'receive: loop {
                     let fragment = match stream.try_next().await {
                         Ok(Some(fragment)) => fragment,
-                        Ok(None) => {
-                            error!(
-                                "LLM stream ended before message completion. Processor state: {}. Received text so far:\n{}",
-                                processor.status_summary(),
-                                processor.received_text(),
-                            );
-                            Err(eyre!("stream ended before message completion"))?
-                        }
-                        Err(err) => {
-                            error!(
-                                "LLM stream failed before message completion. Processor state: {}. Received text so far:\n{}\nError: {err:?}",
-                                processor.status_summary(),
-                                processor.received_text(),
-                            );
-                            Err(err).context("Top level try_next")?
-                        }
+                        Ok(None) => break 'receive Self::handle_incomplete_stream_end(
+                            processor.finish_incomplete(),
+                            processor.status_summary(),
+                            processor.received_text().into(),
+                            IncompleteStreamEnd::Eof,
+                        )?,
+                        Err(err) => break 'receive Self::handle_incomplete_stream_end(
+                            processor.finish_incomplete(),
+                            processor.status_summary(),
+                            processor.received_text().into(),
+                            IncompleteStreamEnd::Error(err.into()),
+                        )?,
                     };
+
                     for event in processor.push(fragment)? {
                         match event {
                             ProcessorEvent::VisibleText(text) => yield text,
@@ -183,6 +185,45 @@ impl Game {
             )),
             text_stream: Box::pin(stream),
             round_output: Box::pin(async move { Ok(rx_output.await?) }),
+        }
+    }
+
+    fn handle_incomplete_stream_end(
+        output: Option<TurnOutput>,
+        status_summary: String,
+        received_text: String,
+        end: IncompleteStreamEnd,
+    ) -> Result<TurnOutput> {
+        let using_partial_output = output.is_some();
+        let partial_suffix = if using_partial_output {
+            ", using partial output"
+        } else {
+            ""
+        };
+
+        match end {
+            IncompleteStreamEnd::Eof => {
+                error!(
+                    "LLM stream ended before message completion{}. Processor state: {}. Received text so far:\n{}",
+                    partial_suffix, status_summary, received_text,
+                );
+
+                match output {
+                    Some(output) => Ok(output),
+                    None => Err(eyre!("stream ended before message completion")),
+                }
+            }
+            IncompleteStreamEnd::Error(err) => {
+                error!(
+                    "LLM stream failed before message completion{}. Processor state: {}. Received text so far:\n{}\nError: {err:?}",
+                    partial_suffix, status_summary, received_text,
+                );
+
+                match output {
+                    Some(output) => Ok(output),
+                    None => Err(err).context("Top level try_next"),
+                }
+            }
         }
     }
 
@@ -450,7 +491,11 @@ fn parse_image_description(src: &str) -> Result<ImageDescription> {
     let [description, caption] = parts[..] else {
         return Err(eyre!("No {IMAGE_DESCRIPTION_STOPS} in output"));
     };
-    let caption = caption.split(IMAGE_CAPTION_ENDS).next().unwrap_or(caption).trim();
+    let caption = caption
+        .split(IMAGE_CAPTION_ENDS)
+        .next()
+        .unwrap_or(caption)
+        .trim();
 
     Ok(ImageDescription {
         description: description.trim().into(),

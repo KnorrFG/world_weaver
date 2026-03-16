@@ -23,7 +23,10 @@ pub(super) struct TurnStreamProcessor {
     eoo_finder: StreamFinder,
     discarded_prefix: String,
     image_description: String,
+    image_info: Option<ImageDescription>,
     received_text: String,
+    output_text: String,
+    tail_text: String,
 }
 
 pub(super) enum ProcessorEvent {
@@ -41,7 +44,10 @@ impl TurnStreamProcessor {
             eoo_finder: StreamFinder::new(OUTPUT_STOPS),
             discarded_prefix: String::new(),
             image_description: String::new(),
+            image_info: None,
             received_text: String::new(),
+            output_text: String::new(),
+            tail_text: String::new(),
         }
     }
 
@@ -67,6 +73,44 @@ impl TurnStreamProcessor {
 
     pub(super) fn received_text(&self) -> &str {
         &self.received_text
+    }
+
+    pub(super) fn finish_incomplete(&mut self) -> Option<TurnOutput> {
+        match self.mode {
+            SendToLLMState::StreamingOutputText => {
+                self.output_text.push_str(&self.eoo_finder.finish());
+            }
+            SendToLLMState::FinishingUp => {}
+            SendToLLMState::LookingForStartOfImageDescription => {}
+            SendToLLMState::ParsingImageDescription => {
+                self.image_description.push_str(&self.eoi_finder.finish());
+            }
+        }
+
+        let image_info = self.image_info.clone()?;
+        if self.output_text.trim().is_empty() {
+            return None;
+        }
+
+        let parts = self.tail_text.split(super::SECRET_STOPS).collect::<Vec<_>>();
+        let (secret, actions) = if parts.len() == 1 {
+            (None, parts[0])
+        } else {
+            (Some(parts[0].to_string()), parts[1])
+        };
+
+        Some(TurnOutput::from_parts(
+            image_info.description,
+            image_info.caption,
+            self.output_text.clone(),
+            secret,
+            actions
+                .split(super::ACTION_BREAK)
+                .map(|s| s.trim().to_string())
+                .collect(),
+            0,
+            0,
+        ))
     }
 
     fn push_text_delta(&mut self, text: String) -> Result<Vec<ProcessorEvent>> {
@@ -139,6 +183,7 @@ impl TurnStreamProcessor {
                         )
                     })
                     .context("parsing image description")?;
+                self.image_info = Some(description.clone());
                 events.push(ProcessorEvent::ImageDescriptionReady(description));
                 post_token_text
             }
@@ -155,17 +200,20 @@ impl TurnStreamProcessor {
         match self.eoo_finder.process(&fragment) {
             MatchResult::Blocked => String::new(),
             MatchResult::CheckedOutput(output) => {
+                self.output_text.push_str(&output);
                 events.push(ProcessorEvent::VisibleText(output));
                 String::new()
             }
             MatchResult::StopTokenMatched {
                 pre_token_text: processed,
-                post_token_text: _,
+                post_token_text,
             } => {
                 if !processed.is_empty() {
+                    self.output_text.push_str(&processed);
                     events.push(ProcessorEvent::VisibleText(processed));
                 }
                 self.mode = SendToLLMState::FinishingUp;
+                self.tail_text.push_str(&post_token_text);
                 String::new()
             }
         }
@@ -234,5 +282,46 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0], ProcessorEvent::TurnComplete(_)));
+    }
+
+    #[test]
+    fn builds_partial_output_when_stream_dies_after_visible_text() {
+        let mut processor = TurnStreamProcessor::new();
+        processor
+            .push(text_delta(
+                "[[[IMAGE DESCRIPTION]]]\nportrait details\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nVisible intro",
+            ))
+            .unwrap();
+
+        let output = processor.finish_incomplete().unwrap();
+
+        assert_eq!(output.image_description, "portrait details");
+        assert_eq!(output.image_caption, "Night Watch");
+        assert_eq!(output.text, "Visible intro");
+        assert_eq!(output.secret_info, "none");
+        assert_eq!(
+            output.proposed_next_actions,
+            [
+                String::from("missing"),
+                String::from("missing"),
+                String::from("missing")
+            ]
+        );
+    }
+
+    #[test]
+    fn builds_partial_output_after_output_stop_with_missing_tail() {
+        let mut processor = TurnStreamProcessor::new();
+        processor
+            .push(text_delta(
+                "[[[IMAGE DESCRIPTION]]]\nportrait details\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nVisible intro\n[[[OUTPUT STOPS]]]\n",
+            ))
+            .unwrap();
+
+        let output = processor.finish_incomplete().unwrap();
+
+        assert_eq!(output.text, "Visible intro");
+        assert_eq!(output.secret_info, "none");
+        assert_eq!(output.proposed_next_actions[0], "missing");
     }
 }

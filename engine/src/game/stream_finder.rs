@@ -94,6 +94,12 @@ impl StreamFinder {
             MatchResult::CheckedOutput(output_chars.into_iter().collect())
         }
     }
+
+    pub fn finish(&mut self) -> String {
+        let res = self.stored_output.iter().collect();
+        self.reset();
+        res
+    }
 }
 
 #[cfg(test)]

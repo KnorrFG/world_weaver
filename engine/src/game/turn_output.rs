@@ -1,10 +1,7 @@
 //! `TurnOutput` is the structured form of a fully generated turn.
 //! This module also contains the parser and serializer for the custom output format.
 
-use color_eyre::{
-    Result,
-    eyre::{ensure, eyre},
-};
+use color_eyre::eyre::eyre;
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +27,39 @@ pub struct TurnOutput {
 }
 
 impl TurnOutput {
+    pub fn from_parts(
+        image_description: String,
+        image_caption: String,
+        text: String,
+        secret_info: Option<String>,
+        proposed_next_actions: Vec<String>,
+        input_tokens: usize,
+        output_tokens: usize,
+    ) -> Self {
+        let mut actions = proposed_next_actions
+            .into_iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+        actions.resize(N_PROPOSED_OPTIONS, "missing".into());
+
+        Self {
+            image_description: image_description.trim().into(),
+            image_caption: image_caption.trim().into(),
+            text: text.trim().into(),
+            secret_info: fallback_if_empty(
+                secret_info
+                    .unwrap_or_else(|| "none".into())
+                    .trim()
+                    .to_string(),
+                "none",
+            ),
+            proposed_next_actions: actions[..N_PROPOSED_OPTIONS].to_vec().try_into().unwrap(),
+            input_tokens,
+            output_tokens,
+        }
+    }
+
     pub fn to_llm_format(&self) -> String {
         let mut output = String::new();
 
@@ -91,57 +121,39 @@ impl TryFrom<OutputMessage> for TurnOutput {
             return Err(err);
         };
 
-        let res: Result<Self> = (|| {
-            let parts = tail.split(SECRET_STOPS).collect::<Vec<&str>>();
-            let (secret, tail) = if parts.len() == 1 {
-                ("", parts[0])
-            } else {
-                (parts[0], parts[1])
-            };
+        let parts = tail.split(SECRET_STOPS).collect::<Vec<&str>>();
+        let (secret, action_text) = if parts.len() == 1 {
+            (None, parts[0])
+        } else {
+            (Some(parts[0].to_string()), parts[1])
+        };
 
-            let proposed_next_actions: Vec<String> = tail
-                .split(ACTION_BREAK)
-                .map(|s| s.trim().to_string())
-                .collect();
+        let proposed_next_actions = action_text
+            .split(ACTION_BREAK)
+            .map(|s| s.trim().to_string())
+            .collect::<Vec<_>>();
 
-            ensure!(
-                proposed_next_actions.len() >= N_PROPOSED_OPTIONS,
-                "Expected {} proposed actions, found {} Message: \n{}",
-                N_PROPOSED_OPTIONS,
-                proposed_next_actions.len(),
-                value.text
+        if proposed_next_actions.iter().filter(|s| !s.is_empty()).count() < N_PROPOSED_OPTIONS {
+            warn!(
+                "Incomplete output tail, filling defaults. Found {} proposed actions.",
+                proposed_next_actions.iter().filter(|s| !s.is_empty()).count(),
             );
-
-            Ok(TurnOutput {
-                image_description: image_description.trim().into(),
-                image_caption: image_caption.trim().into(),
-                text: output.trim().to_string(),
-                secret_info: secret.trim().to_string(),
-                proposed_next_actions: proposed_next_actions[..N_PROPOSED_OPTIONS]
-                    .to_vec()
-                    .try_into()
-                    .unwrap(),
-                input_tokens: value.input_tokens,
-                output_tokens: value.output_tokens,
-            })
-        })();
-
-        match res {
-            Ok(res) => Ok(res),
-            Err(e) => {
-                warn!("Incomplete output:\n{e:?}");
-                Ok(TurnOutput {
-                    image_description: image_description.trim().into(),
-                    image_caption: image_caption.trim().into(),
-                    text: output.trim().to_string(),
-                    secret_info: tail.trim().to_string(),
-                    proposed_next_actions: ["Missing".into(), "Missing".into(), "Missing".into()],
-                    input_tokens: value.input_tokens,
-                    output_tokens: value.output_tokens,
-                })
-            }
         }
+
+        Ok(TurnOutput::from_parts(
+            image_description.into(),
+            image_caption.into(),
+            output.into(),
+            secret,
+            proposed_next_actions,
+            value.input_tokens,
+            value.output_tokens,
+        ))
     }
+}
+
+fn fallback_if_empty(s: String, fallback: &str) -> String {
+    if s.is_empty() { fallback.into() } else { s }
 }
 
 #[cfg(test)]
@@ -185,6 +197,36 @@ Call out softly.
                 String::from("Move closer."),
                 String::from("Hide behind crates."),
                 String::from("Call out softly.")
+            ]
+        );
+    }
+
+    #[test]
+    fn fills_missing_secret_and_actions_with_defaults() {
+        let raw = r#"
+[[[IMAGE DESCRIPTION]]]
+hero portrait
+[[[IMAGE DESCRIPTION STOPS]]]
+Night Watch
+[[[IMAGE CAPTION ENDS]]]
+You step into the alley.
+[[[OUTPUT STOPS]]]
+"#;
+
+        let parsed = TurnOutput::try_from(OutputMessage {
+            text: raw.into(),
+            input_tokens: 12,
+            output_tokens: 34,
+        })
+        .unwrap();
+
+        assert_eq!(parsed.secret_info, "none");
+        assert_eq!(
+            parsed.proposed_next_actions,
+            [
+                String::from("missing"),
+                String::from("missing"),
+                String::from("missing")
             ]
         );
     }
