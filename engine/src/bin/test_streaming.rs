@@ -6,6 +6,7 @@ use engine::{
     llm::ProvidedModel,
     llm::{InputMessage, Request, ResponseFragment, Role},
 };
+use log::LevelFilter;
 use tokio::pin;
 use tokio_stream::StreamExt;
 
@@ -19,7 +20,13 @@ pub struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Cli::parse();
-    pretty_env_logger::init();
+    let mut logger = pretty_env_logger::formatted_builder();
+    logger
+        .filter_level(LevelFilter::Off)
+        .filter_module("world_weaver", LevelFilter::Info)
+        .filter_module("engine", LevelFilter::Info)
+        .parse_default_env()
+        .init();
     color_eyre::install().unwrap();
 
     let mut model = args.model.make(args.api_key);

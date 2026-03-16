@@ -55,7 +55,7 @@ impl LLM for OpenAIChat {
             }
 
             let body = OpenAIChatRequest {
-                model,
+                model: model.clone(),
                 messages,
                 // max_tokens: req.max_tokens,
                 stream: true,
@@ -80,6 +80,10 @@ impl LLM for OpenAIChat {
                 let mut full_text = String::new();
                 let mut input_tokens = 0usize;
                 let mut output_tokens = 0usize;
+                let mut chunk_count = 0usize;
+                let mut data_line_count = 0usize;
+                let mut last_chunk_preview = None::<String>;
+                let mut last_data_line = None::<String>;
 
                 while let Some(chunk) = stream.next().await {
                     let chunk = match chunk {
@@ -90,12 +94,16 @@ impl LLM for OpenAIChat {
                         }
                     };
 
+                    chunk_count += 1;
                     let text = std::str::from_utf8(&chunk).context("chunk to utf-8")?;
+                    last_chunk_preview = Some(text.chars().take(300).collect());
 
                     for line in text.lines() {
                         let Some(data) = line.trim().strip_prefix("data: ") else {
                             continue;
                         };
+                        data_line_count += 1;
+                        last_data_line = Some(data.chars().take(300).collect());
 
                         if data == "[DONE]" {
                             yield ResponseFragment::MessageComplete(OutputMessage {
@@ -122,6 +130,15 @@ impl LLM for OpenAIChat {
                         }
                     }
                 }
+
+                error!(
+                    "OpenAI stream ended without [DONE]. model={model}, url={url}, chunks={chunk_count}, data_lines={data_line_count}, text_len={}, input_tokens={}, output_tokens={}, last_chunk_preview={:?}, last_data_line={:?}",
+                    full_text.len(),
+                    input_tokens,
+                    output_tokens,
+                    last_chunk_preview,
+                    last_data_line,
+                );
             }
         })
     }

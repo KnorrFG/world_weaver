@@ -6,7 +6,7 @@ use color_eyre::{
     Result,
     eyre::Context,
 };
-use log::{debug, error};
+use log::error;
 
 use crate::llm::OutputMessage;
 
@@ -50,6 +50,15 @@ impl TurnStreamProcessor {
         }
     }
 
+    pub(super) fn status_summary(&self) -> String {
+        format!(
+            "mode={:?}, discarded_prefix_len={}, image_description_len={}",
+            self.mode,
+            self.discarded_prefix.len(),
+            self.image_description.len(),
+        )
+    }
+
     fn push_text_delta(&mut self, text: String) -> Result<Vec<ProcessorEvent>> {
         let mut events = Vec::new();
         let mut rest = text;
@@ -73,7 +82,6 @@ impl TurnStreamProcessor {
     }
 
     fn finish_message(&mut self, message: OutputMessage) -> Result<Vec<ProcessorEvent>> {
-        debug!("Output complete:\n{}{}", self.discarded_prefix, message.text);
         let output = TurnOutput::try_from(message).context("parse output")?;
         Ok(vec![ProcessorEvent::TurnComplete(output)])
     }

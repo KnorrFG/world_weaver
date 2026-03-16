@@ -68,10 +68,10 @@ Depending on what you want to use, you need accounts and API-keys at
 and possibly <https://bfl.ai/>. The API keys must then be configured in the game's option menu.
 
 Flux1 is slower (~1 minute per request). Flux2 is faster (~20s) but moderated, and that
-moderation is quite trigger happy.
+moderation is quite trigger-happy.
 Using Flux2 via Black Forest Labs costs roughly twice as much as using it via Replicate.
 
-Claude Haiku and Aion-2 are much cheaper than Claude Sonette and Aion-1, but they also
+Claude-Haiku and Aion-2 are much cheaper than Claude-Sonette and Aion-1, but they also
 are worse at following many instructions at once, and more prone to contradicting themselves.
 
 
@@ -79,4 +79,5 @@ are worse at following many instructions at once, and more prone to contradictin
 
 I'm open for PRs, but I also reserve the right to reject them if I dislike them.
 If you want to make a PR, take a look at the [Architecture](doc/architecture.md) first.
-And make sure the tests pass, it's not worth setting up a CI for this, but I'll run the tests manually.
+And make sure the tests pass, it's not worth setting up a CI for this, but I'll
+run the tests manually.

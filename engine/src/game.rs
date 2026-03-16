@@ -12,7 +12,7 @@ use color_eyre::{
     Result,
     eyre::{Context, ensure, eyre},
 };
-use log::debug;
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use tokio::{pin, sync::oneshot};
 use tokio_stream::{Stream, StreamExt};
@@ -50,6 +50,7 @@ impl Clone for Game {
     }
 }
 
+#[derive(Debug)]
 enum SendToLLMState {
     LookingForStartOfImageDescription,
     ParsingImageDescription,
@@ -128,7 +129,13 @@ impl Game {
                         .try_next()
                         .await
                         .context("Top level try_next")?
-                        .ok_or_else(|| eyre!("stream ended before message completion"))?;
+                        .ok_or_else(|| {
+                            error!(
+                                "LLM stream ended before message completion. Processor state: {}",
+                                processor.status_summary()
+                            );
+                            eyre!("stream ended before message completion")
+                        })?;
                     for event in processor.push(fragment)? {
                         match event {
                             ProcessorEvent::VisibleText(text) => yield text,
@@ -202,7 +209,7 @@ impl Game {
             let turns = self.data.turn_data[tdl - SUMMARY_INTERVAL..tdl].to_vec();
             Box::pin(async move {
                 let summary = create_new_summary(llm, &last_summary, turns).await?;
-                debug!("New summary:\n{}", summary.text);
+                debug!("Received new summary");
                 Ok(Some(summary))
             })
         } else {
@@ -390,8 +397,7 @@ async fn create_new_summary(
             Use the old summary (if it exists) and the provided turns to create a new summary
         "#, term_strs.join("\n---\n")};
 
-    debug!("Sending summary request - system msg:\n{system_message}");
-    debug!("Sending summary request - user msg:\n{user_message}");
+    debug!("Sending summary request");
     let mut stream = llm.send_request_stream(Request {
         system: Some(system_message.into()),
         messages: vec![InputMessage::user(user_message)],
