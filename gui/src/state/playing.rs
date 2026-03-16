@@ -14,6 +14,7 @@ use iced::{
         text_input,
     },
 };
+use log::debug;
 
 use crate::{
     ElemHelper, State, TryIntoExt,
@@ -98,6 +99,7 @@ impl State for Playing {
                 self.update_editor_content(action, EditorId::GMInstruction)
             }
             ClearActionEditors => {
+                debug!("Handling ClearActionEditors in Playing state");
                 self.reset_action_editors();
                 cmd::none()
             }

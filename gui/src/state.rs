@@ -55,6 +55,10 @@ impl<T: std::ops::DerefMut<Target = dyn State> + fmt::Debug> State for T {
     fn clone(&self) -> Box<dyn State> {
         self.deref().clone()
     }
+
+    fn is_playing(&self) -> bool {
+        self.deref().is_playing()
+    }
 }
 
 #[derive(Debug, Default)]

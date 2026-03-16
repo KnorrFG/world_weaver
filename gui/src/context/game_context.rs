@@ -3,7 +3,7 @@ use color_eyre::{
     eyre::{bail, eyre},
 };
 use iced::{Task, advanced::image::Handle as ImgHandle, widget::markdown};
-use log::warn;
+use log::{debug, warn};
 
 use crate::{
     TryIntoExt,
@@ -162,6 +162,7 @@ impl GameContext {
             }
 
             SummaryFinished(generation, message) => {
+                debug!("Received SummaryFinished for generation {generation}");
                 let summary_msg = unpack_received_msg!(message, generation);
                 let FinalizingTurn {
                     input,
@@ -190,6 +191,7 @@ impl GameContext {
                 }
                 .into();
                 self.current_generation += 1;
+                debug!("Turn finalized for generation {generation}, sending ClearActionEditors");
                 Ok(Task::done(PlayingMessage::ClearActionEditors.into()))
             }
 
@@ -338,6 +340,10 @@ impl GameContext {
     }
 
     fn request_summary(&mut self, turn: FinalizingTurn) -> Result<Task<Message>> {
+        debug!(
+            "Requesting summary for generation {}",
+            self.current_generation
+        );
         self.sub_state = turn.into();
         let fut = self.game.mk_summary_if_neccessary();
         let generation = self.current_generation;
@@ -349,10 +355,14 @@ impl GameContext {
     fn apply_resolution(&mut self, resolution: Resolution) -> Result<Task<Message>> {
         match resolution {
             Resolution::Pending(turn) => {
+                debug!("Pending turn still waiting for the other generation result");
                 self.sub_state = turn.into();
                 Ok(Task::none())
             }
-            Resolution::Finalizing(turn) => self.request_summary(turn),
+            Resolution::Finalizing(turn) => {
+                debug!("Turn has output and image result, moving to summary/finalization");
+                self.request_summary(turn)
+            }
         }
     }
 

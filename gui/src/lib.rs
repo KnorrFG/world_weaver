@@ -13,6 +13,7 @@ use iced::{
     padding,
     widget::{Id, container, operation, scrollable, text},
 };
+use log::debug;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
@@ -76,7 +77,14 @@ impl Gui {
                     message::UiMessage::Playing(message::ui_messages::Playing::ClearActionEditors)
                 ) && !self.state.is_playing()
                 {
+                    debug!("Dropping ClearActionEditors because active state is not Playing");
                     return Ok(Task::none());
+                }
+                if matches!(
+                    ui_message,
+                    message::UiMessage::Playing(message::ui_messages::Playing::ClearActionEditors)
+                ) {
+                    debug!("Dispatching ClearActionEditors to active state");
                 }
                 let cmd = self.state.update(ui_message, &mut self.ctx)?;
                 let mut task = cmd
