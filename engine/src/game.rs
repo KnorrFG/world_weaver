@@ -408,6 +408,7 @@ async fn create_new_summary(
               conversation scene. Do not advance time, add new scenes, or include events
               beyond the dialogue. End when conversation naturally concludes or reaches ~500
               words. If more needs to happen, wait for next player input.
+            - Never drop a character from the summary that had a meaningful interaction with the player
 
             You are a summarization tool, not a storyteller.
         "#};
