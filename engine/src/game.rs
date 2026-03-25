@@ -579,11 +579,15 @@ impl GameData {
            
            
            My input will be structured like this: The turn number, followed by
-           three sections, all optional
+           three sections, all optional.
 
-            Schema contract:
-            All tags are mandatory and ordered.
-            Failure to emit later tags is a fatal error even if earlier tags are complete.
+           Output contract:
+           Your reply must begin immediately with {IMAGE_DESCRIPTION}.
+           Do not write any text before {IMAGE_DESCRIPTION}.
+           Do not explain the format.
+           Do not mention drafts, planning, thinking, reasoning, finalizing, or compliance.
+           Do not add any headings except the required delimiters below.
+           All delimiters are mandatory and must appear in the exact order shown below.
 
            --- START EXAMPLE ---
             turn *N*
@@ -615,7 +619,7 @@ impl GameData {
            *A short image caption* will be displayed below the image 1-5 words
            {IMAGE_CAPTION_ENDS}
            *The output*: text that is displayed to me, this should be roughly {MAX_WORDS} words.
-           No need for characters to hold endless monologues.
+           Prefix every output with Date, time, weekday and location.
            {OUTPUT_STOPS}
            *Secret info*:. Stuff that is related to output, but hidden from me,
            it's a note for yourself. Keep it real short 500 words at most. Don't repeat
@@ -632,12 +636,13 @@ impl GameData {
            --- END EXAMPLE ---
 
            The above example is explanatory, you are supposed to replace all text within it,
-           except for {OUTPUT_STOPS}, {SECRET_STOPS} and {ACTION_BREAK}, which are parsing delimiters and
-           need to appear exactly like this on their own lines. So your generated output
-           should NOT start with `The output*:`, additionally, it should not have a heading
-           or the turn number. Everything before {IMAGE_DESCRIPTION} will be ignored. If you generate
-           thinking output (and you shouldn't), then under no circumstances use {IMAGE_DESCRIPTION}
-           in the thinking-output. 
+           except for the delimiters, which need to appear exactly like this on their own lines.
+           Your generated output must not have a heading or the turn number.
+           Invalid output examples:
+           - any text before {IMAGE_DESCRIPTION}
+           - text like "I will now format the response"
+           - text like "Drafting done"
+           - any explanation of what you are about to do
            The image description must end with {IMAGE_DESCRIPTION_STOPS}.
            The image caption must come after that and end with {IMAGE_CAPTION_ENDS}.
 
@@ -669,9 +674,8 @@ impl GameData {
            - Make sure you respect the output-length limitation of *at most* {MAX_WORDS} words.
            - Do only generate a single response, don't generate anything after the third
              proposed action
-           - Messages that violate the output formatting are invalid. You are under no circumstances
-             allowed to violate that. Word limits only apply to the output-section within the format,
-             not to the whole output
+           - The first characters of your reply must be exactly {IMAGE_DESCRIPTION}
+           - Word limits only apply to the output-section within the format, not to the whole output
         "#};
 
         let messages = (0..self.turn_data.len())
