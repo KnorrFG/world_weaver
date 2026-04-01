@@ -112,6 +112,7 @@ pub mod ui_messages {
 
         pub enum MainMenu {
             Continue,
+            RestartCurrentWorld,
             WorldsMenu,
             Options,
             SaveButton,

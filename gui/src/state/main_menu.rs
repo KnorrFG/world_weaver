@@ -46,6 +46,14 @@ impl State for MainMenu {
                 }
                 cmd::transition(Playing::new())
             }
+            RestartCurrentWorld => {
+                let world = if let Some(gctx) = &ctx.game {
+                    gctx.game.data.world_description.clone()
+                } else {
+                    ctx.load_game()?.data.world_description.clone()
+                };
+                cmd::transition(state::start_new_game::StartNewGame::new(world))
+            }
             WorldsMenu => cmd::transition(state::WorldMenu::try_new()?),
             SaveButton => cmd::transition(Modal::input(
                 State::clone(self),
@@ -89,6 +97,9 @@ impl State for MainMenu {
             buttons.extend(elem_list![
                 button("Continue")
                     .on_press(MyMessage::Continue.into())
+                    .width(button_w),
+                button("Restart current world")
+                    .on_press(MyMessage::RestartCurrentWorld.into())
                     .width(button_w),
                 button("Save")
                     .on_press(MyMessage::SaveButton.into())

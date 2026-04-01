@@ -625,8 +625,10 @@ impl GameData {
            it's a note for yourself. Keep it real short 500 words at most. Don't repeat
            information here that's already in the inputs or outputs. Use to track relevant
            events that are not in the current scene, to note down hidden intentions, or plan
-           for future turns. This field must never be empty. If there is nothing hidden to
-           track, output exactly `none`.
+           for future turns. This field must never be empty. Only output `none` if there is
+           truly nothing hidden, no off-screen development, no latent intention, no unresolved
+           consequence, and no useful reminder for future turns. If there is any hidden
+           implication or anything worth tracking, put it here instead of writing `none`.
            {SECRET_STOPS}
            Proposed Action 1
            {ACTION_BREAK}
@@ -650,7 +652,9 @@ impl GameData {
            plausable next actions for {player} to take. They should not be prefixed
            with "Proposed action: " or anything else. They must be direct actions the player
            character could take next. Do not put notes, plans, hidden information, narrator
-           commentary, or world-state summaries into the proposed actions.
+           commentary, or world-state summaries into the proposed actions. If an action would
+           reveal information the player does not yet know, that information belongs in secret
+           info instead, not in the proposed actions.
 
            Here is the description of the world the story plays in, and some some
            instructions about the style:
