@@ -8,6 +8,8 @@ use strum::{Display, EnumIter};
 pub mod flux2;
 pub use flux2::Flux2;
 
+pub mod pruna;
+
 pub mod replicate;
 
 use crate::ImgModBox;
@@ -31,6 +33,7 @@ pub enum ProvidedModel {
     Flux2BLF,
     #[default]
     Flux2Replicate,
+    PImagePruna,
 }
 
 impl Display for ProvidedModel {
@@ -57,6 +60,7 @@ impl Display for ProvidedModel {
 pub enum Model {
     Flux1,
     Flux2,
+    PImage,
 }
 
 impl Model {
@@ -74,6 +78,7 @@ impl Model {
                    do it in a non-erotic way.
                 "
             }
+            Self::PImage => "",
         }
     }
 }
@@ -97,6 +102,7 @@ pub enum ModelProvider {
     #[strum(to_string = "Black Forest Labs")]
     BFL,
     Replicate,
+    Pruna,
 }
 
 impl ProvidedModel {
@@ -139,6 +145,21 @@ impl ProvidedModel {
                     })
                 },
             )),
+            ProvidedModel::PImagePruna => Box::new(pruna::PrunaImageModel::new(
+                "https://api.pruna.ai/v1/predictions".into(),
+                *self,
+                "p-image".into(),
+                key,
+                |prompt| {
+                    json!({
+                        "prompt": prompt,
+                        "aspect_ratio": "custom",
+                        "width": 832,
+                        "height": 1216,
+                        "disable_safety_checker": true
+                    })
+                },
+            )),
         }
     }
 
@@ -147,6 +168,7 @@ impl ProvidedModel {
             ProvidedModel::Flux1Replicate => ModelProvider::Replicate,
             ProvidedModel::Flux2Replicate => ModelProvider::Replicate,
             ProvidedModel::Flux2BLF => ModelProvider::BFL,
+            ProvidedModel::PImagePruna => ModelProvider::Pruna,
         }
     }
 
@@ -155,6 +177,7 @@ impl ProvidedModel {
             ProvidedModel::Flux1Replicate => Model::Flux1,
             ProvidedModel::Flux2BLF => Model::Flux2,
             ProvidedModel::Flux2Replicate => Model::Flux2,
+            ProvidedModel::PImagePruna => Model::PImage,
         }
     }
 }
