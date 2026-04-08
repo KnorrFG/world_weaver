@@ -92,11 +92,11 @@ impl TurnStreamProcessor {
             return None;
         }
 
-        let parts = self.tail_text.split(super::SECRET_STOPS).collect::<Vec<_>>();
-        let (secret, actions) = if parts.len() == 1 {
-            (None, parts[0])
+        let parts = self.tail_text.split(super::SECRET_STARTS).collect::<Vec<_>>();
+        let (actions, secret) = if parts.len() == 1 {
+            (parts[0], None)
         } else {
-            (Some(parts[0].to_string()), parts[1])
+            (parts[0], Some(parts[1].to_string()))
         };
 
         Some(TurnOutput::from_parts(
@@ -274,7 +274,7 @@ mod tests {
 
         let events = processor
             .push(ResponseFragment::MessageComplete(OutputMessage {
-                text: "[[[IMAGE DESCRIPTION]]]\nportrait\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nShown text[[[OUTPUT STOPS]]]\nsecret[[[SECRET STOPS]]]\na1[[[ACTION BREAK]]]a2[[[ACTION BREAK]]]a3".into(),
+                text: "[[[IMAGE DESCRIPTION]]]\nportrait\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nShown text[[[OUTPUT STOPS]]]\nsecret[[[SECRET STARTS]]]\na1[[[ACTION BREAK]]]a2[[[ACTION BREAK]]]a3".into(),
                 input_tokens: 1,
                 output_tokens: 1,
             }))

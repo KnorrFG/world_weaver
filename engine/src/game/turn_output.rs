@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     ACTION_BREAK, IMAGE_CAPTION_ENDS, IMAGE_DESCRIPTION, IMAGE_DESCRIPTION_STOPS, OUTPUT_STOPS,
-    SECRET_STOPS,
+    SECRET_STARTS,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,11 +80,11 @@ impl TurnOutput {
         output.push_str("\n");
         output.push_str(OUTPUT_STOPS);
         output.push_str("\n");
-        output.push_str(&self.secret_info);
-        output.push_str("\n");
-        output.push_str(SECRET_STOPS);
-        output.push_str("\n");
         output.push_str(&self.proposed_next_actions.join(&format!("\n{ACTION_BREAK}\n")));
+        output.push_str("\n");
+        output.push_str(SECRET_STARTS);
+        output.push_str("\n");
+        output.push_str(&self.secret_info);
 
         output
     }
@@ -121,11 +121,11 @@ impl TryFrom<OutputMessage> for TurnOutput {
             return Err(err);
         };
 
-        let parts = tail.split(SECRET_STOPS).collect::<Vec<&str>>();
-        let (secret, action_text) = if parts.len() == 1 {
-            (None, parts[0])
+        let parts = tail.split(SECRET_STARTS).collect::<Vec<&str>>();
+        let (action_text, secret) = if parts.len() == 1 {
+            (parts[0], None)
         } else {
-            (Some(parts[0].to_string()), parts[1])
+            (parts[0], Some(parts[1].to_string()))
         };
 
         let proposed_next_actions = action_text
@@ -171,13 +171,13 @@ Night Watch
 [[[IMAGE CAPTION ENDS]]]
 You step into the alley.
 [[[OUTPUT STOPS]]]
-The watcher is armed.
-[[[SECRET STOPS]]]
 Move closer.
 [[[ACTION BREAK]]]
 Hide behind crates.
 [[[ACTION BREAK]]]
 Call out softly.
+[[[SECRET STARTS]]]
+The watcher is armed.
 "#;
 
         let parsed = TurnOutput::try_from(OutputMessage {
