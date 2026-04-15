@@ -64,6 +64,10 @@ impl TurnOutput {
         let mut output = String::new();
 
         output.push_str("\n");
+        output.push_str(SECRET_STARTS);
+        output.push_str("\n");
+        output.push_str(&self.secret_info);
+        output.push_str("\n");
         output.push_str(IMAGE_DESCRIPTION);
         output.push_str("\n");
         output.push_str(&self.image_description);
@@ -81,10 +85,6 @@ impl TurnOutput {
         output.push_str(OUTPUT_STOPS);
         output.push_str("\n");
         output.push_str(&self.proposed_next_actions.join(&format!("\n{ACTION_BREAK}\n")));
-        output.push_str("\n");
-        output.push_str(SECRET_STARTS);
-        output.push_str("\n");
-        output.push_str(&self.secret_info);
 
         output
     }
@@ -94,9 +94,15 @@ impl TryFrom<OutputMessage> for TurnOutput {
     type Error = color_eyre::Report;
 
     fn try_from(value: OutputMessage) -> std::result::Result<Self, Self::Error> {
-        let parts = value.text.split(IMAGE_DESCRIPTION).collect::<Vec<&str>>();
+        let parts = value.text.split(SECRET_STARTS).collect::<Vec<&str>>();
         let Some(tail) = parts.last().copied() else {
             let err = eyre!("impossible?");
+            error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
+            return Err(err);
+        };
+        let parts = tail.split(IMAGE_DESCRIPTION).collect::<Vec<&str>>();
+        let [secret, tail] = parts[..] else {
+            let err = eyre!("no {IMAGE_DESCRIPTION} after {SECRET_STARTS} in output");
             error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
             return Err(err);
         };
@@ -121,14 +127,7 @@ impl TryFrom<OutputMessage> for TurnOutput {
             return Err(err);
         };
 
-        let parts = tail.split(SECRET_STARTS).collect::<Vec<&str>>();
-        let (action_text, secret) = if parts.len() == 1 {
-            (parts[0], None)
-        } else {
-            (parts[0], Some(parts[1].to_string()))
-        };
-
-        let proposed_next_actions = action_text
+        let proposed_next_actions = tail
             .split(ACTION_BREAK)
             .map(|s| s.trim().to_string())
             .collect::<Vec<_>>();
@@ -144,7 +143,7 @@ impl TryFrom<OutputMessage> for TurnOutput {
             image_description.into(),
             image_caption.into(),
             output.into(),
-            secret,
+            Some(secret.to_string()),
             proposed_next_actions,
             value.input_tokens,
             value.output_tokens,
@@ -164,6 +163,8 @@ mod tests {
     fn parses_turn_output_from_marker_format() {
         let raw = r#"
 ignored prefix
+[[[SECRET STARTS]]]
+The watcher is armed.
 [[[IMAGE DESCRIPTION]]]
 hero portrait
 [[[IMAGE DESCRIPTION STOPS]]]
@@ -176,8 +177,6 @@ Move closer.
 Hide behind crates.
 [[[ACTION BREAK]]]
 Call out softly.
-[[[SECRET STARTS]]]
-The watcher is armed.
 "#;
 
         let parsed = TurnOutput::try_from(OutputMessage {
@@ -204,6 +203,7 @@ The watcher is armed.
     #[test]
     fn fills_missing_secret_and_actions_with_defaults() {
         let raw = r#"
+[[[SECRET STARTS]]]
 [[[IMAGE DESCRIPTION]]]
 hero portrait
 [[[IMAGE DESCRIPTION STOPS]]]
