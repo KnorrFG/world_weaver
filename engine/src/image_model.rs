@@ -31,8 +31,8 @@ use crate::ImgModBox;
 pub enum ProvidedModel {
     Flux1Replicate,
     Flux2BLF,
-    #[default]
     Flux2Replicate,
+    #[default]
     PImagePruna,
 }
 

@@ -272,6 +272,7 @@ impl GameContext {
                 })
             })
             .transpose()?;
+        self.output_text = turn_data.output.text.clone();
         self.output_markdown = markdown::parse(&turn_data.output.text).collect();
 
         // this looks wrong but is right. If we load the completed turn 0, the displayed output

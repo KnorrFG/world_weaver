@@ -95,13 +95,12 @@ pub enum ProvidedModel {
     #[strum(to_string = "Aion-1.0 (openrouter.ai)")]
     Aion1Openr,
 
-    #[default]
     #[strum(to_string = "Aion-2.0 (openrouter.ai)")]
     Aion2Openr,
 
-    #[strum(to_string = "Qwen3 (openrouter.ai)")]
-    Qwen3_235B,
-    KimmiK2,
+    #[default]
+    #[strum(to_string = "Mistral-large-2512 (openrouter.ai)")]
+    Mistral,
 }
 
 impl ProvidedModel {
@@ -124,15 +123,10 @@ impl ProvidedModel {
                 "https://openrouter.ai/api/v1/chat/completions",
                 "aion-labs/aion-2.0",
             )),
-            ProvidedModel::KimmiK2 => Box::new(OpenAIChat::new(
+            ProvidedModel::Mistral => Box::new(OpenAIChat::new(
                 api_key,
                 "https://openrouter.ai/api/v1/chat/completions",
-                "moonshotai/kimi-k2",
-            )),
-            ProvidedModel::Qwen3_235B => Box::new(OpenAIChat::new(
-                api_key,
-                "https://openrouter.ai/api/v1/chat/completions",
-                "deepseek/deepseek-chat-v3.1",
+                "mistralai/mistral-large-2512",
             )),
         }
     }
@@ -144,8 +138,7 @@ impl ProvidedModel {
             ProvidedModel::ClaudeHaiku => ModelProvider::Anthropic,
             ProvidedModel::Aion1Openr => ModelProvider::Openrouter,
             ProvidedModel::Aion2Openr => ModelProvider::Openrouter,
-            ProvidedModel::KimmiK2 => ModelProvider::Openrouter,
-            ProvidedModel::Qwen3_235B => ModelProvider::Openrouter,
+            ProvidedModel::Mistral => ModelProvider::Openrouter,
         }
     }
 }
