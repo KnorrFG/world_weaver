@@ -572,12 +572,10 @@ impl GameData {
            {image_gen_extra_infos}
 
            Output format:
-           Your reply must begin immediately with {SECRET_STARTS}.
+           Your reply must begin immediately with {IMAGE_DESCRIPTION}.
            Do not write any text before it. Do not write planning, explanations, or meta text.
            Use exactly this structure and keep the delimiters unchanged:
 
-           {SECRET_STARTS}
-           secret info
            {IMAGE_DESCRIPTION}
            image description
            {IMAGE_DESCRIPTION_STOPS}
@@ -590,9 +588,11 @@ impl GameData {
            proposed action 2
            {ACTION_BREAK}
            proposed action 3
+           {SECRET_STARTS}
+           secret info
 
            Rules:
-           - The first characters of your reply must be exactly {SECRET_STARTS}
+           - The first characters of your reply must be exactly {IMAGE_DESCRIPTION}
            - The image should usually show a single currently important character unless a place or object is more important
            - Proposed actions must be direct next actions for {player}
            - Proposed actions must not contain hidden info, narrator notes, plans, or world-state summaries

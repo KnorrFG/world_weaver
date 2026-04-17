@@ -83,7 +83,7 @@ pub enum ModelProvider {
     Eq,
 )]
 pub enum ProvidedModel {
-    #[strum(to_string = "Claude Sonette - latest(Anthropic)")]
+    #[strum(to_string = "Claude Sonette - latest (Anthropic)")]
     ClaudeSonette,
 
     #[strum(to_string = "Claude Sonette 4.5 (Anthropic)")]
@@ -92,15 +92,15 @@ pub enum ProvidedModel {
     #[strum(to_string = "Claude Haiku - latest (Anthropic)")]
     ClaudeHaiku,
 
-    #[strum(to_string = "Aion-1.0 (openrouter.ai)")]
-    Aion1Openr,
-
     #[strum(to_string = "Aion-2.0 (openrouter.ai)")]
     Aion2Openr,
 
+    #[strum(to_string = "Kimmi K2.5 (openrouter.ai)")]
+    Flex,
+
     #[default]
-    #[strum(to_string = "Mistral-large-2512 (openrouter.ai)")]
-    Mistral,
+    #[strum(to_string = "GLM 5 (openrouter.ai)")]
+    Glm5,
 }
 
 impl ProvidedModel {
@@ -113,20 +113,20 @@ impl ProvidedModel {
                 Box::new(Claude::new(api_key, "claude-sonnet-4-5".into()))
             }
             ProvidedModel::ClaudeHaiku => Box::new(Claude::new(api_key, "claude-haiku-4-5".into())),
-            ProvidedModel::Aion1Openr => Box::new(OpenAIChat::new(
-                api_key,
-                "https://openrouter.ai/api/v1/chat/completions",
-                "aion-labs/aion-1.0",
-            )),
             ProvidedModel::Aion2Openr => Box::new(OpenAIChat::new(
                 api_key,
                 "https://openrouter.ai/api/v1/chat/completions",
                 "aion-labs/aion-2.0",
             )),
-            ProvidedModel::Mistral => Box::new(OpenAIChat::new(
+            ProvidedModel::Flex => Box::new(OpenAIChat::new(
                 api_key,
                 "https://openrouter.ai/api/v1/chat/completions",
-                "mistralai/mistral-large-2512",
+                "moonshotai/kimi-k2.5",
+            )),
+            ProvidedModel::Glm5 => Box::new(OpenAIChat::new(
+                api_key,
+                "https://openrouter.ai/api/v1/chat/completions",
+                "z-ai/glm-5",
             )),
         }
     }
@@ -136,9 +136,9 @@ impl ProvidedModel {
             ProvidedModel::ClaudeSonette => ModelProvider::Anthropic,
             ProvidedModel::ClaudeSonette45 => ModelProvider::Anthropic,
             ProvidedModel::ClaudeHaiku => ModelProvider::Anthropic,
-            ProvidedModel::Aion1Openr => ModelProvider::Openrouter,
             ProvidedModel::Aion2Openr => ModelProvider::Openrouter,
-            ProvidedModel::Mistral => ModelProvider::Openrouter,
+            ProvidedModel::Flex => ModelProvider::Openrouter,
+            ProvidedModel::Glm5 => ModelProvider::Openrouter,
         }
     }
 }

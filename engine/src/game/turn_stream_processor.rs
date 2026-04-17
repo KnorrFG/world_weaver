@@ -22,7 +22,6 @@ pub(super) struct TurnStreamProcessor {
     eoi_finder: StreamFinder,
     eoo_finder: StreamFinder,
     discarded_prefix: String,
-    secret_info: Option<String>,
     image_description: String,
     image_info: Option<ImageDescription>,
     received_text: String,
@@ -44,7 +43,6 @@ impl TurnStreamProcessor {
             eoi_finder: StreamFinder::new(IMAGE_CAPTION_ENDS),
             eoo_finder: StreamFinder::new(OUTPUT_STOPS),
             discarded_prefix: String::new(),
-            secret_info: None,
             image_description: String::new(),
             image_info: None,
             received_text: String::new(),
@@ -98,7 +96,7 @@ impl TurnStreamProcessor {
             image_info.description,
             image_info.caption,
             self.output_text.clone(),
-            self.secret_info.clone(),
+            None,
             self.tail_text
                 .split(super::ACTION_BREAK)
                 .map(|s| s.trim().to_string())
@@ -143,7 +141,6 @@ impl TurnStreamProcessor {
                 post_token_text,
             } => {
                 self.discarded_prefix.push_str(&pre_token_text);
-                self.secret_info = Some(parse_secret_info(&self.discarded_prefix));
                 self.mode = SendToLLMState::ParsingImageDescription;
                 post_token_text
             }
@@ -216,14 +213,6 @@ impl TurnStreamProcessor {
     }
 }
 
-fn parse_secret_info(src: &str) -> String {
-    src.split(super::SECRET_STARTS)
-        .last()
-        .unwrap_or(src)
-        .trim()
-        .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use crate::llm::OutputMessage;
@@ -278,7 +267,7 @@ mod tests {
 
         let events = processor
             .push(ResponseFragment::MessageComplete(OutputMessage {
-                text: "[[[SECRET STARTS]]]\nsecret\n[[[IMAGE DESCRIPTION]]]\nportrait\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nShown text[[[OUTPUT STOPS]]]\na1[[[ACTION BREAK]]]a2[[[ACTION BREAK]]]a3".into(),
+                text: "[[[IMAGE DESCRIPTION]]]\nportrait\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nShown text[[[OUTPUT STOPS]]]\na1[[[ACTION BREAK]]]a2[[[ACTION BREAK]]]a3[[[SECRET STARTS]]]\nsecret".into(),
                 input_tokens: 1,
                 output_tokens: 1,
             }))
