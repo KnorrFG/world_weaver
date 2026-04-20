@@ -25,12 +25,11 @@ pub use turn_output::TurnOutput;
 use turn_stream_processor::{ProcessorEvent, TurnStreamProcessor};
 
 const SUMMARY_INTERVAL: usize = 5;
-const IMAGE_DESCRIPTION: &str = "[[[IMAGE DESCRIPTION]]]";
-const IMAGE_DESCRIPTION_STOPS: &str = "[[[IMAGE DESCRIPTION STOPS]]]";
-const IMAGE_CAPTION_ENDS: &str = "[[[IMAGE CAPTION ENDS]]]";
-const OUTPUT_STOPS: &str = "[[[OUTPUT STOPS]]]";
-const SECRET_STARTS: &str = "[[[SECRET STARTS]]]";
-const ACTION_BREAK: &str = "[[[ACTION BREAK]]]";
+const SECTION_IMAGE_DESCRIPTION: &str = "[SECTION IMAGE DESCRIPTION]";
+const SECTION_IMAGE_CAPTION: &str = "[SECTION IMAGE CAPTION]";
+const SECTION_OUTPUT: &str = "[SECTION OUTPUT]";
+const SECTION_SECRET_INFO: &str = "[SECTION SECRET INFO]";
+const ACTION_SEPARATOR: &str = "[ACTION SEPARATOR]";
 
 pub struct Game {
     pub llm: LLMBox,
@@ -378,8 +377,9 @@ async fn create_new_summary(
 
             TASK:
 
-            - Produce an updated summary that incorporates all rounds since the previous summary.
-              Or create a new one, if there is none to update. Keep the summary as concicse as
+            - Produce an updated summary that incorporates all rounds since the previous summary and
+              the previous summary itself.
+              Or create a new one, if there is no old summary to update. Keep the summary as concicse as
               possible. It may at most be 2000 words in size, the shorter the better.
 
             RULES:
@@ -404,10 +404,7 @@ async fn create_new_summary(
             - Make sure to include all relevant information from the last summary
               and all provided turns, don't overweight the latest ones.
             - You may drop the least important information to keep the word-limit.
-            - When player inputs dialogue/conversation, generate ONLY that
-              conversation scene. Do not advance time, add new scenes, or include events
-              beyond the dialogue. End when conversation naturally concludes or reaches ~500
-              words. If more needs to happen, wait for next player input.
+            - Add a section with GM instructions if there are commands that need to be remembered long-term
             - Never drop a character from the summary that had a meaningful interaction with the player
 
             You are a summarization tool, not a storyteller.
@@ -488,13 +485,15 @@ async fn create_new_summary(
 }
 
 fn parse_image_description(src: &str) -> Result<ImageDescription> {
-    let parts = src.split(IMAGE_DESCRIPTION_STOPS).collect::<Vec<&str>>();
-    let [description, caption] = parts[..] else {
-        return Err(eyre!("No {IMAGE_DESCRIPTION_STOPS} in output"));
+    let Some((description, caption)) = split_once_any(
+        src,
+        &[SECTION_IMAGE_CAPTION],
+    ) else {
+        return Err(eyre!("No {SECTION_IMAGE_CAPTION} in output"));
     };
-    let caption = caption
-        .split(IMAGE_CAPTION_ENDS)
-        .next()
+    let caption = trim_leading_markers(caption, &[SECTION_IMAGE_CAPTION]);
+    let caption = split_once_any(caption, &[SECTION_OUTPUT])
+        .map(|(caption, _)| caption)
         .unwrap_or(caption)
         .trim();
 
@@ -502,6 +501,24 @@ fn parse_image_description(src: &str) -> Result<ImageDescription> {
         description: description.trim().into(),
         caption: caption.trim().into(),
     })
+}
+
+fn split_once_any<'a>(src: &'a str, markers: &[&str]) -> Option<(&'a str, &'a str)> {
+    markers
+        .iter()
+        .filter_map(|marker| src.find(marker).map(|idx| (idx, marker.len())))
+        .min_by_key(|(idx, _)| *idx)
+        .map(|(idx, len)| (&src[..idx], &src[idx + len..]))
+}
+
+fn trim_leading_markers<'a>(mut src: &'a str, markers: &[&str]) -> &'a str {
+    loop {
+        let trimmed = src.trim_start();
+        let Some(marker) = markers.iter().find(|marker| trimmed.starts_with(**marker)) else {
+            return src;
+        };
+        src = &trimmed[marker.len()..];
+    }
 }
 
 async fn get_image(
@@ -572,27 +589,27 @@ impl GameData {
            {image_gen_extra_infos}
 
            Output format:
-           Your reply must begin immediately with {IMAGE_DESCRIPTION}.
+           Your reply must begin immediately with {SECTION_IMAGE_DESCRIPTION}.
            Do not write any text before it. Do not write planning, explanations, or meta text.
            Use exactly this structure and keep the delimiters unchanged:
 
-           {IMAGE_DESCRIPTION}
+           {SECTION_IMAGE_DESCRIPTION}
            image description
-           {IMAGE_DESCRIPTION_STOPS}
+           {SECTION_IMAGE_CAPTION}
            short image caption, 1-5 words
-           {IMAGE_CAPTION_ENDS}
+           {SECTION_OUTPUT}
            visible story text, at most {MAX_WORDS} words, starting with date, time, weekday and location
-           {OUTPUT_STOPS}
+           {ACTION_SEPARATOR}
            proposed action 1
-           {ACTION_BREAK}
+           {ACTION_SEPARATOR}
            proposed action 2
-           {ACTION_BREAK}
+           {ACTION_SEPARATOR}
            proposed action 3
-           {SECRET_STARTS}
+           {SECTION_SECRET_INFO}
            secret info
 
            Rules:
-           - The first characters of your reply must be exactly {IMAGE_DESCRIPTION}
+           - The first characters of your reply must be exactly {SECTION_IMAGE_DESCRIPTION}
            - The image should usually show a single currently important character unless a place or object is more important
            - Proposed actions must be direct next actions for {player}
            - Proposed actions must not contain hidden info, narrator notes, plans, or world-state summaries
@@ -696,7 +713,7 @@ mod tests {
     fn parses_streamed_image_description_prefix() {
         let raw = r#"
 hero portrait
-[[[IMAGE DESCRIPTION STOPS]]]
+[SECTION IMAGE CAPTION]
 Night Watch
 "#;
 
@@ -710,9 +727,9 @@ Night Watch
     fn parses_streamed_image_description_prefix_with_marker() {
         let raw = r#"
 hero portrait
-[[[IMAGE DESCRIPTION STOPS]]]
+[SECTION IMAGE CAPTION]
 Night Watch
-[[[IMAGE CAPTION ENDS]]]
+[SECTION OUTPUT]
 "#;
 
         let parsed = parse_image_description(raw).unwrap();

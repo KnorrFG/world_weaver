@@ -11,8 +11,8 @@ use log::error;
 use crate::llm::OutputMessage;
 
 use super::{
-    IMAGE_CAPTION_ENDS, IMAGE_DESCRIPTION, OUTPUT_STOPS, ImageDescription, ResponseFragment,
-    SendToLLMState, StreamFinder, TurnOutput, parse_image_description,
+    ACTION_SEPARATOR, SECTION_IMAGE_DESCRIPTION, SECTION_OUTPUT, ImageDescription,
+    ResponseFragment, SendToLLMState, StreamFinder, TurnOutput, parse_image_description,
     stream_finder::MatchResult,
 };
 
@@ -39,9 +39,9 @@ impl TurnStreamProcessor {
     pub(super) fn new() -> Self {
         Self {
             mode: SendToLLMState::LookingForStartOfImageDescription,
-            soi_finder: StreamFinder::new(IMAGE_DESCRIPTION),
-            eoi_finder: StreamFinder::new(IMAGE_CAPTION_ENDS),
-            eoo_finder: StreamFinder::new(OUTPUT_STOPS),
+            soi_finder: StreamFinder::new(SECTION_IMAGE_DESCRIPTION),
+            eoi_finder: StreamFinder::new(SECTION_OUTPUT),
+            eoo_finder: StreamFinder::new(ACTION_SEPARATOR),
             discarded_prefix: String::new(),
             image_description: String::new(),
             image_info: None,
@@ -98,7 +98,7 @@ impl TurnStreamProcessor {
             self.output_text.clone(),
             None,
             self.tail_text
-                .split(super::ACTION_BREAK)
+                .split(ACTION_SEPARATOR)
                 .map(|s| s.trim().to_string())
                 .collect(),
             0,
@@ -228,7 +228,7 @@ mod tests {
         let mut processor = TurnStreamProcessor::new();
         let events = processor
             .push(text_delta(
-                "preface [[[IMAGE DESCRIPTION]]]\nportrait details\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]",
+                "preface [SECTION IMAGE DESCRIPTION]\nportrait details\n[SECTION IMAGE CAPTION]\nNight Watch\n[SECTION OUTPUT]",
             ))
             .unwrap();
 
@@ -245,7 +245,7 @@ mod tests {
         let mut processor = TurnStreamProcessor::new();
         let events = processor
             .push(text_delta(
-                "[[[IMAGE DESCRIPTION]]]\nportrait details\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nVisible intro",
+                "[SECTION IMAGE DESCRIPTION]\nportrait details\n[SECTION IMAGE CAPTION]\nNight Watch\n[SECTION OUTPUT]\nVisible intro",
             ))
             .unwrap();
 
@@ -261,13 +261,13 @@ mod tests {
         let mut processor = TurnStreamProcessor::new();
         let _ = processor
             .push(text_delta(
-                "[[[IMAGE DESCRIPTION]]]\nportrait\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nShown text[[[OUTPUT STOPS]]]\nsecret",
+                "[SECTION IMAGE DESCRIPTION]\nportrait\n[SECTION IMAGE CAPTION]\nNight Watch\n[SECTION OUTPUT]\nShown text[ACTION SEPARATOR]\na1",
             ))
             .unwrap();
 
         let events = processor
             .push(ResponseFragment::MessageComplete(OutputMessage {
-                text: "[[[IMAGE DESCRIPTION]]]\nportrait\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nShown text[[[OUTPUT STOPS]]]\na1[[[ACTION BREAK]]]a2[[[ACTION BREAK]]]a3[[[SECRET STARTS]]]\nsecret".into(),
+                text: "[SECTION IMAGE DESCRIPTION]\nportrait\n[SECTION IMAGE CAPTION]\nNight Watch\n[SECTION OUTPUT]\nShown text[ACTION SEPARATOR]a1[ACTION SEPARATOR]a2[ACTION SEPARATOR]a3[SECTION SECRET INFO]\nsecret".into(),
                 input_tokens: 1,
                 output_tokens: 1,
             }))
@@ -282,7 +282,7 @@ mod tests {
         let mut processor = TurnStreamProcessor::new();
         processor
             .push(text_delta(
-                "[[[IMAGE DESCRIPTION]]]\nportrait details\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nVisible intro",
+                "[SECTION IMAGE DESCRIPTION]\nportrait details\n[SECTION IMAGE CAPTION]\nNight Watch\n[SECTION OUTPUT]\nVisible intro",
             ))
             .unwrap();
 
@@ -307,7 +307,7 @@ mod tests {
         let mut processor = TurnStreamProcessor::new();
         processor
             .push(text_delta(
-                "[[[IMAGE DESCRIPTION]]]\nportrait details\n[[[IMAGE DESCRIPTION STOPS]]]\nNight Watch\n[[[IMAGE CAPTION ENDS]]]\nVisible intro\n[[[OUTPUT STOPS]]]\n",
+                "[SECTION IMAGE DESCRIPTION]\nportrait details\n[SECTION IMAGE CAPTION]\nNight Watch\n[SECTION OUTPUT]\nVisible intro\n[ACTION SEPARATOR]\n",
             ))
             .unwrap();
 

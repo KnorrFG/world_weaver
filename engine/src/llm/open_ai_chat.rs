@@ -13,15 +13,35 @@ pub struct OpenAIChat {
     api_key: String,
     base_url: String,
     model: String,
+    provider_order: Vec<String>,
 }
 
 impl OpenAIChat {
     pub fn new(api_key: String, base_url: impl Into<String>, model: impl Into<String>) -> Self {
+        Self::new_with_provider_order(
+            api_key,
+            base_url,
+            model,
+            std::iter::empty::<String>(),
+        )
+    }
+
+    pub fn new_with_provider_order<I, S>(
+        api_key: String,
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+        provider_order: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
         Self {
             client: Client::new(),
             api_key,
             base_url: base_url.into(),
-            model: model.into(), // change as needed
+            model: model.into(),
+            provider_order: provider_order.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -32,6 +52,7 @@ impl LLM for OpenAIChat {
         let api_key = self.api_key.clone();
         let url = self.base_url.clone();
         let model = self.model.clone();
+        let provider_order = self.provider_order.clone();
 
         Box::pin(try_stream! {
             // Build messages
@@ -59,6 +80,7 @@ impl LLM for OpenAIChat {
                 messages,
                 // max_tokens: req.max_tokens,
                 stream: true,
+                provider: OpenRouterProvider::from_order(provider_order),
             };
 
             let res = client
@@ -150,6 +172,7 @@ impl LLM for OpenAIChat {
             api_key: self.api_key.clone(),
             base_url: self.base_url.clone(),
             model: self.model.clone(),
+            provider_order: self.provider_order.clone(),
         })
     }
 }
@@ -164,6 +187,23 @@ struct OpenAIChatRequest {
     messages: Vec<OpenAIMessage>,
     // max_tokens: usize,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider: Option<OpenRouterProvider>,
+}
+
+#[derive(Serialize)]
+struct OpenRouterProvider {
+    order: Vec<String>,
+}
+
+impl OpenRouterProvider {
+    fn from_order(order: Vec<String>) -> Option<Self> {
+        if order.is_empty() {
+            None
+        } else {
+            Some(Self { order })
+        }
+    }
 }
 
 #[derive(Serialize)]

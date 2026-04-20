@@ -11,8 +11,8 @@ use crate::{
 };
 
 use super::{
-    ACTION_BREAK, IMAGE_CAPTION_ENDS, IMAGE_DESCRIPTION, IMAGE_DESCRIPTION_STOPS, OUTPUT_STOPS,
-    SECRET_STARTS,
+    ACTION_SEPARATOR, SECTION_IMAGE_CAPTION, SECTION_IMAGE_DESCRIPTION, SECTION_OUTPUT,
+    SECTION_SECRET_INFO,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,25 +64,25 @@ impl TurnOutput {
         let mut output = String::new();
 
         output.push_str("\n");
-        output.push_str(IMAGE_DESCRIPTION);
+        output.push_str(SECTION_IMAGE_DESCRIPTION);
         output.push_str("\n");
         output.push_str(&self.image_description);
         output.push_str("\n");
-        output.push_str(IMAGE_DESCRIPTION_STOPS);
+        output.push_str(SECTION_IMAGE_CAPTION);
         output.push_str("\n");
         output.push_str(&self.image_caption);
         output.push_str("\n");
-        output.push_str(IMAGE_CAPTION_ENDS);
+        output.push_str(SECTION_OUTPUT);
         output.push_str("\n");
 
         output.push_str(&self.text);
 
         output.push_str("\n");
-        output.push_str(OUTPUT_STOPS);
+        output.push_str(ACTION_SEPARATOR);
         output.push_str("\n");
-        output.push_str(&self.proposed_next_actions.join(&format!("\n{ACTION_BREAK}\n")));
+        output.push_str(&self.proposed_next_actions.join(&format!("\n{ACTION_SEPARATOR}\n")));
         output.push_str("\n");
-        output.push_str(SECRET_STARTS);
+        output.push_str(SECTION_SECRET_INFO);
         output.push_str("\n");
         output.push_str(&self.secret_info);
 
@@ -94,42 +94,42 @@ impl TryFrom<OutputMessage> for TurnOutput {
     type Error = color_eyre::Report;
 
     fn try_from(value: OutputMessage) -> std::result::Result<Self, Self::Error> {
-        let parts = value.text.split(IMAGE_DESCRIPTION).collect::<Vec<&str>>();
-        let Some(tail) = parts.last().copied() else {
-            let err = eyre!("impossible?");
+        let Some((_, tail)) = split_once_any(&value.text, &[SECTION_IMAGE_DESCRIPTION]) else {
+            let err = eyre!("no {SECTION_IMAGE_DESCRIPTION} in output");
             error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
             return Err(err);
         };
-        let parts = tail.split(IMAGE_DESCRIPTION_STOPS).collect::<Vec<&str>>();
-        let [image_description, tail] = parts[..] else {
-            let err = eyre!("no {IMAGE_DESCRIPTION_STOPS} in output");
+        let Some((image_description, tail)) =
+            split_once_any(tail, &[SECTION_IMAGE_CAPTION])
+        else {
+            let err = eyre!("no {SECTION_IMAGE_CAPTION} in output");
+            error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
+            return Err(err);
+        };
+        let tail = trim_leading_markers(tail, &[SECTION_IMAGE_CAPTION]);
+
+        let Some((image_caption, tail)) = split_once_any(tail, &[SECTION_OUTPUT]) else {
+            let err = eyre!("no {SECTION_OUTPUT} in output");
             error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
             return Err(err);
         };
 
-        let parts = tail.split(IMAGE_CAPTION_ENDS).collect::<Vec<&str>>();
-        let [image_caption, tail] = parts[..] else {
-            let err = eyre!("no {IMAGE_CAPTION_ENDS} in output");
+        let Some((output, tail)) = split_once_any(tail, &[ACTION_SEPARATOR]) else {
+            let err = eyre!("No {ACTION_SEPARATOR} in output");
             error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
             return Err(err);
         };
 
-        let parts = tail.split(OUTPUT_STOPS).collect::<Vec<&str>>();
-        let [output, tail] = parts[..] else {
-            let err = eyre!("No {OUTPUT_STOPS} in output");
-            error!("Failed to parse LLM message:\n{}\nParse error: {err:?}", value.text);
-            return Err(err);
-        };
-
-        let parts = tail.split(SECRET_STARTS).collect::<Vec<&str>>();
-        let (action_text, secret) = if parts.len() == 1 {
-            (parts[0], None)
+        let (action_text, secret) = if let Some((action_text, secret)) =
+            split_once_any(tail, &[SECTION_SECRET_INFO])
+        {
+            (action_text, Some(secret.to_string()))
         } else {
-            (parts[0], Some(parts[1].to_string()))
+            (tail, None)
         };
 
         let proposed_next_actions = action_text
-            .split(ACTION_BREAK)
+            .split(ACTION_SEPARATOR)
             .map(|s| s.trim().to_string())
             .collect::<Vec<_>>();
 
@@ -156,6 +156,24 @@ fn fallback_if_empty(s: String, fallback: &str) -> String {
     if s.is_empty() { fallback.into() } else { s }
 }
 
+fn split_once_any<'a>(src: &'a str, markers: &[&str]) -> Option<(&'a str, &'a str)> {
+    markers
+        .iter()
+        .filter_map(|marker| src.find(marker).map(|idx| (idx, marker.len())))
+        .min_by_key(|(idx, _)| *idx)
+        .map(|(idx, len)| (&src[..idx], &src[idx + len..]))
+}
+
+fn trim_leading_markers<'a>(mut src: &'a str, markers: &[&str]) -> &'a str {
+    loop {
+        let trimmed = src.trim_start();
+        let Some(marker) = markers.iter().find(|marker| trimmed.starts_with(**marker)) else {
+            return src;
+        };
+        src = &trimmed[marker.len()..];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,19 +182,19 @@ mod tests {
     fn parses_turn_output_from_marker_format() {
         let raw = r#"
 ignored prefix
-[[[IMAGE DESCRIPTION]]]
+[SECTION IMAGE DESCRIPTION]
 hero portrait
-[[[IMAGE DESCRIPTION STOPS]]]
+[SECTION IMAGE CAPTION]
 Night Watch
-[[[IMAGE CAPTION ENDS]]]
+[SECTION OUTPUT]
 You step into the alley.
-[[[OUTPUT STOPS]]]
+[ACTION SEPARATOR]
 Move closer.
-[[[ACTION BREAK]]]
+[ACTION SEPARATOR]
 Hide behind crates.
-[[[ACTION BREAK]]]
+[ACTION SEPARATOR]
 Call out softly.
-[[[SECRET STARTS]]]
+[SECTION SECRET INFO]
 The watcher is armed.
 "#;
 
@@ -204,13 +222,13 @@ The watcher is armed.
     #[test]
     fn fills_missing_secret_and_actions_with_defaults() {
         let raw = r#"
-[[[IMAGE DESCRIPTION]]]
+[SECTION IMAGE DESCRIPTION]
 hero portrait
-[[[IMAGE DESCRIPTION STOPS]]]
+[SECTION IMAGE CAPTION]
 Night Watch
-[[[IMAGE CAPTION ENDS]]]
+[SECTION OUTPUT]
 You step into the alley.
-[[[OUTPUT STOPS]]]
+[ACTION SEPARATOR]
 "#;
 
         let parsed = TurnOutput::try_from(OutputMessage {
@@ -229,5 +247,36 @@ You step into the alley.
                 String::from("missing")
             ]
         );
+    }
+
+    #[test]
+    fn tolerates_duplicate_markers() {
+        let raw = r#"
+[SECTION IMAGE DESCRIPTION]
+hero portrait
+[SECTION IMAGE CAPTION]
+[SECTION IMAGE CAPTION]
+Night Watch
+[SECTION OUTPUT]
+You step into the alley.
+[ACTION SEPARATOR]
+Move closer.
+[ACTION SEPARATOR]
+Hide behind crates.
+[ACTION SEPARATOR]
+Call out softly.
+[SECTION SECRET INFO]
+The watcher is armed.
+"#;
+
+        let parsed = TurnOutput::try_from(OutputMessage {
+            text: raw.into(),
+            input_tokens: 12,
+            output_tokens: 34,
+        })
+        .unwrap();
+
+        assert_eq!(parsed.image_caption, "Night Watch");
+        assert_eq!(parsed.secret_info, "The watcher is armed.");
     }
 }

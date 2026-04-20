@@ -123,10 +123,11 @@ impl ProvidedModel {
                 "https://openrouter.ai/api/v1/chat/completions",
                 "moonshotai/kimi-k2.5",
             )),
-            ProvidedModel::Glm5 => Box::new(OpenAIChat::new(
+            ProvidedModel::Glm5 => Box::new(OpenAIChat::new_with_provider_order(
                 api_key,
                 "https://openrouter.ai/api/v1/chat/completions",
                 "z-ai/glm-5",
+                ["siliconflow", "deepinfra"],
             )),
         }
     }
