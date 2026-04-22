@@ -25,6 +25,7 @@ pub use turn_output::TurnOutput;
 use turn_stream_processor::{ProcessorEvent, TurnStreamProcessor};
 
 const SUMMARY_INTERVAL: usize = 5;
+const TURNS_KEPT_AFTER_SUMMARY: usize = 2;
 const SECTION_IMAGE_DESCRIPTION: &str = "[SECTION IMAGE DESCRIPTION]";
 const SECTION_IMAGE_CAPTION: &str = "[SECTION IMAGE CAPTION]";
 const SECTION_OUTPUT: &str = "[SECTION OUTPUT]";
@@ -399,7 +400,13 @@ async fn create_new_summary(
             - Focus on:
               - Major plot developments
               - Important world or character state changes
-              - Decisions and consequences that affect future gameplay
+              - Decisions, events and consequences that affect future gameplay
+            - The purpose of the summary is to allow the story teller to
+              continue the story without contradicting himself. So it should contain
+              all relevant facts, and timepoints.
+            - The summary doesn't need to be well readable prose, it needs to
+              well readable prose, it needs to contain all relevant information
+              and be as short as possible.
             - No formatting beyond plain paragraphs unless explicitly requested.
             - Make sure to include all relevant information from the last summary
               and all provided turns, don't overweight the latest ones.
@@ -485,10 +492,7 @@ async fn create_new_summary(
 }
 
 fn parse_image_description(src: &str) -> Result<ImageDescription> {
-    let Some((description, caption)) = split_once_any(
-        src,
-        &[SECTION_IMAGE_CAPTION],
-    ) else {
+    let Some((description, caption)) = split_once_any(src, &[SECTION_IMAGE_CAPTION]) else {
         return Err(eyre!("No {SECTION_IMAGE_CAPTION} in output"));
     };
     let caption = trim_leading_markers(caption, &[SECTION_IMAGE_CAPTION]);
@@ -638,19 +642,15 @@ impl GameData {
            --- END SUMMARY ---
         "#};
 
-        let messages = (0..self.turn_data.len())
-            .rev()
-            .take(SUMMARY_INTERVAL)
-            .rev()
-            .flat_map(|i| {
-                let mut user_message = format!("turn {i}");
-                let TurnData { input, output, .. } = &self.turn_data[i];
-                input.write_to_user_msg_string(&mut user_message);
-                [
-                    InputMessage::user(user_message),
-                    InputMessage::assistant(output.to_llm_format()),
-                ]
-            });
+        let messages = (self.request_context_start()..self.turn_data.len()).flat_map(|i| {
+            let mut user_message = format!("turn {i}");
+            let TurnData { input, output, .. } = &self.turn_data[i];
+            input.write_to_user_msg_string(&mut user_message);
+            [
+                InputMessage::user(user_message),
+                InputMessage::assistant(output.to_llm_format()),
+            ]
+        });
 
         let mut latest_message = String::new();
         input.write_to_user_msg_string(&mut latest_message);
@@ -667,6 +667,17 @@ impl GameData {
             max_tokens: 5000,
             system: Some(system_message),
         }
+    }
+
+    fn request_context_start(&self) -> usize {
+        let Some(summary) = self.summaries.last() else {
+            return 0;
+        };
+
+        summary
+            .bday
+            .saturating_add(1)
+            .saturating_sub(TURNS_KEPT_AFTER_SUMMARY)
     }
 }
 
@@ -736,6 +747,43 @@ Night Watch
 
         assert_eq!(parsed.description, "hero portrait");
         assert_eq!(parsed.caption, "Night Watch");
+    }
+
+    #[test]
+    fn request_context_starts_at_beginning_without_summary() {
+        let data = GameData {
+            world_description: WorldDescription {
+                name: String::new(),
+                main_description: String::new(),
+                pc_descriptions: BTreeMap::new(),
+                init_action: String::new(),
+            },
+            pc: String::new(),
+            summaries: vec![],
+            turn_data: vec![],
+        };
+
+        assert_eq!(data.request_context_start(), 0);
+    }
+
+    #[test]
+    fn request_context_keeps_three_turns_before_latest_summary() {
+        let data = GameData {
+            world_description: WorldDescription {
+                name: String::new(),
+                main_description: String::new(),
+                pc_descriptions: BTreeMap::new(),
+                init_action: String::new(),
+            },
+            pc: String::new(),
+            summaries: vec![Summary {
+                content: String::new(),
+                bday: 9,
+            }],
+            turn_data: vec![],
+        };
+
+        assert_eq!(data.request_context_start(), 7);
     }
 }
 

@@ -133,6 +133,11 @@ pub mod ui_messages {
         pub enum WorldEditor {
             AddCharacterButton,
             AddCharacter(String),
+            DeleteCharacter(String),
+            ConfirmDeleteCharacter(String),
+            EditCharacterName(String),
+            UpdateCharacterName(String),
+            ConfirmCharacterNameEdit,
             UpdateCharacter(String, text_editor::Action),
             UpdateCharacterInitAction(String, text_editor::Action),
             DescriptionUpdate(text_editor::Action),

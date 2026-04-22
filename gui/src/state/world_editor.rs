@@ -36,6 +36,7 @@ pub struct WorldEditor {
     description: text_editor::Content,
     init_action: text_editor::Content,
     characters: BTreeMap<String, CharacterInputs>,
+    editing_character_name: Option<(String, String)>,
     buttons: BTreeMap<String, ActionFnArc>,
 }
 
@@ -52,6 +53,7 @@ impl fmt::Debug for WorldEditor {
             .field("description", &self.description)
             .field("init_action", &self.init_action)
             .field("characters", &self.characters)
+            .field("editing_character_name", &self.editing_character_name)
             .field(
                 "buttons",
                 &self
@@ -83,6 +85,7 @@ impl WorldEditor {
                     )
                 })
                 .collect(),
+            editing_character_name: None,
             buttons: [
                 (
                     "Abort".to_string(),
@@ -171,6 +174,7 @@ impl WorldEditor {
                         )
                     })
                     .collect(),
+                editing_character_name: None,
                 buttons,
             }
         } else {
@@ -179,6 +183,7 @@ impl WorldEditor {
                 description: text_editor::Content::default(),
                 init_action: text_editor::Content::default(),
                 characters: BTreeMap::new(),
+                editing_character_name: None,
                 buttons,
             }
         }
@@ -229,6 +234,37 @@ impl WorldEditor {
         gctx.upate_world_description(self.mk_world())?;
         Ok(())
     }
+
+    fn begin_edit_character_name(&mut self, name: String) {
+        self.editing_character_name = Some((name.clone(), name));
+    }
+
+    fn update_editing_character_name(&mut self, new_name: String) {
+        if let Some((_, current_name)) = &mut self.editing_character_name {
+            *current_name = new_name;
+        }
+    }
+
+    fn finish_editing_character_name(&mut self) -> Result<()> {
+        let Some((old_name, new_name)) = self.editing_character_name.take() else {
+            return Ok(());
+        };
+        let new_name = new_name.trim().to_string();
+        ensure!(!new_name.is_empty(), "Character name must not be empty");
+        if new_name == old_name {
+            return Ok(());
+        }
+        ensure!(
+            !self.characters.contains_key(&new_name),
+            "A character named {new_name} already exists"
+        );
+        let inputs = self
+            .characters
+            .remove(&old_name)
+            .ok_or(eyre!("Character name invalid"))?;
+        self.characters.insert(new_name, inputs);
+        Ok(())
+    }
 }
 
 impl State for WorldEditor {
@@ -247,6 +283,28 @@ impl State for WorldEditor {
             )),
             AddCharacter(name) => {
                 self.characters.insert(name, CharacterInputs::default());
+                cmd::none()
+            }
+            EditCharacterName(name) => {
+                self.begin_edit_character_name(name);
+                cmd::none()
+            }
+            DeleteCharacter(name) => cmd::transition(Modal::confirm(
+                State::clone(self),
+                format!("Do you really want to delete the character {name}?"),
+                Some(MyMessage::ConfirmDeleteCharacter(name).into()),
+                None,
+            )),
+            ConfirmDeleteCharacter(name) => {
+                self.characters.remove(&name);
+                cmd::none()
+            }
+            UpdateCharacterName(name) => {
+                self.update_editing_character_name(name);
+                cmd::none()
+            }
+            ConfirmCharacterNameEdit => {
+                self.finish_editing_character_name()?;
                 cmd::none()
             }
             UpdateCharacter(name, a) => {
@@ -308,13 +366,45 @@ impl State for WorldEditor {
             self.characters
                 .iter()
                 .map(|(name, content)| {
+                    let name_row: iced::Element<'_, UiMessage> =
+                        if matches!(&self.editing_character_name, Some((edited_name, _)) if edited_name == name)
+                        {
+                            let edited_name = &self
+                                .editing_character_name
+                                .as_ref()
+                                .expect("checked above")
+                                .1;
+                            row![
+                                text_input("Character name", edited_name)
+                                    .on_input(|n| MyMessage::UpdateCharacterName(n).into())
+                                    .on_submit(MyMessage::ConfirmCharacterNameEdit.into()),
+                                button("ok").on_press(MyMessage::ConfirmCharacterNameEdit.into()),
+                                button("delete")
+                                    .on_press(MyMessage::DeleteCharacter(name.clone()).into()),
+                            ]
+                            .spacing(10)
+                            .width(Length::Fill)
+                            .into()
+                        } else {
+                            row![
+                                text(name)
+                                    .font(Font {
+                                        weight: iced::font::Weight::Semibold,
+                                        ..Font::DEFAULT
+                                    })
+                                    .size(16),
+                                space::horizontal(),
+                                button("✎")
+                                    .on_press(MyMessage::EditCharacterName(name.clone()).into()),
+                                button("delete")
+                                    .on_press(MyMessage::DeleteCharacter(name.clone()).into()),
+                            ]
+                            .spacing(10)
+                            .width(Length::Fill)
+                            .into()
+                        };
                     column![
-                        text(name)
-                            .font(Font {
-                                weight: iced::font::Weight::Semibold,
-                                ..Font::DEFAULT
-                            })
-                            .size(16),
+                        name_row,
                         text_editor(&content.description)
                             .on_action(|a| MyMessage::UpdateCharacter(name.clone(), a).into()),
                         text("Initial Action:"),
