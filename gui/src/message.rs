@@ -123,10 +123,10 @@ pub mod ui_messages {
 
         pub enum WorldMenu {
             NewWorld,
+            OpenWorld,
             EditWorld(usize),
             StartWorld(usize),
-            DeleteWorld(usize),
-            ConfirmDeleteWorld(usize),
+            ForgetWorld(usize),
             Back,
         }
 

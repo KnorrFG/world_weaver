@@ -142,7 +142,7 @@ impl Game {
                             processor.finish_incomplete(),
                             processor.status_summary(),
                             processor.received_text().into(),
-                            IncompleteStreamEnd::Error(err.into()),
+                            IncompleteStreamEnd::Error(err),
                         )?,
                     };
 

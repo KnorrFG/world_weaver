@@ -147,8 +147,8 @@ pub fn saves_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("saves"))
 }
 
-pub fn worlds_dir() -> Result<PathBuf> {
-    Ok(data_dir()?.join("worlds"))
+pub fn remembered_worlds_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("remembered_worlds.ron"))
 }
 
 pub fn styles_dir() -> Result<PathBuf> {
@@ -178,6 +178,26 @@ pub fn save_config(ps: &Config) -> Result<()> {
     let path = config_path()?;
     save_ron_file(&path, ps)?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct RememberedWorld {
+    pub path: PathBuf,
+    pub last_known_name: String,
+}
+
+pub fn load_remembered_worlds() -> Result<Vec<RememberedWorld>> {
+    let path = remembered_worlds_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    load_ron_file(&path)
+}
+
+pub fn save_remembered_worlds(worlds: &[RememberedWorld]) -> Result<()> {
+    let path = remembered_worlds_path()?;
+    fs::create_dir_all(path.parent().ok_or(eyre!("remembered worlds path has no parent"))?)?;
+    save_ron_file(&path, &worlds)
 }
 
 macro_rules! elem_list {

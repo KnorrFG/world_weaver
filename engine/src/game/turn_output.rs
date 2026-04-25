@@ -63,27 +63,27 @@ impl TurnOutput {
     pub fn to_llm_format(&self) -> String {
         let mut output = String::new();
 
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(SECTION_IMAGE_DESCRIPTION);
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(&self.image_description);
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(SECTION_IMAGE_CAPTION);
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(&self.image_caption);
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(SECTION_OUTPUT);
-        output.push_str("\n");
+        output.push('\n');
 
         output.push_str(&self.text);
 
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(ACTION_SEPARATOR);
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(&self.proposed_next_actions.join(&format!("\n{ACTION_SEPARATOR}\n")));
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(SECTION_SECRET_INFO);
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(&self.secret_info);
 
         output

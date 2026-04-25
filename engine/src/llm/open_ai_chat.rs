@@ -138,12 +138,12 @@ impl LLM for OpenAIChat {
 
                         let event: OpenAIStreamChunk = serde_json::from_str(data).context("parsing stream chunk")?;
 
-                        if let Some(choice) = event.choices.first() {
-                            if let Some(content) = &choice.delta.content {
-                                output_tokens += 1; // token estimate; provider may differ
-                                full_text.push_str(content);
-                                yield ResponseFragment::TextDelta(content.clone());
-                            }
+                        if let Some(choice) = event.choices.first()
+                            && let Some(content) = &choice.delta.content
+                        {
+                            output_tokens += 1; // token estimate; provider may differ
+                            full_text.push_str(content);
+                            yield ResponseFragment::TextDelta(content.clone());
                         }
 
                         if let Some(usage) = event.usage {

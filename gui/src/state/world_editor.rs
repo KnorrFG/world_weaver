@@ -1,16 +1,20 @@
-use std::{collections::BTreeMap, fmt, fs, path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    fmt, fs,
+    path::PathBuf,
+    sync::Arc,
+};
 
 use crate::{
-    TryIntoExt, bold_text,
+    RememberedWorld, TryIntoExt, bold_text,
     context::Context,
-    elem_list,
+    elem_list, load_remembered_worlds,
     message::{UiMessage, ui_messages::WorldEditor as MyMessage},
-    save_ron_file,
+    save_remembered_worlds,
     state::{
         MainMenu, Modal, Playing, StateCommand, StateExt, WorldMenu, cmd,
         start_new_game::StartNewGame,
     },
-    worlds_dir,
 };
 
 use color_eyre::{
@@ -38,6 +42,7 @@ pub struct WorldEditor {
     init_action: text_editor::Content,
     characters: BTreeMap<String, CharacterInputs>,
     editing_character_name: Option<(String, String)>,
+    current_file_path: Option<PathBuf>,
     buttons: BTreeMap<String, ActionFnArc>,
 }
 
@@ -55,6 +60,7 @@ impl fmt::Debug for WorldEditor {
             .field("init_action", &self.init_action)
             .field("characters", &self.characters)
             .field("editing_character_name", &self.editing_character_name)
+            .field("current_file_path", &self.current_file_path)
             .field(
                 "buttons",
                 &self
@@ -87,6 +93,7 @@ impl WorldEditor {
                 })
                 .collect(),
             editing_character_name: None,
+            current_file_path: None,
             buttons: [
                 (
                     "Abort".to_string(),
@@ -113,19 +120,15 @@ impl WorldEditor {
                 (
                     "Export to File".to_string(),
                     an(|this, _| {
-                        this.try_save_world(true)?;
-                        cmd::transition(Modal::message(
-                            State::clone(this),
-                            "Info",
-                            "Saving succesful",
-                        ))
-                    }),
-                ),
-                (
-                    "Export Markdown".to_string(),
-                    an(|this, _| {
-                        this.try_export_markdown()?;
-                        cmd::none()
+                        if this.try_save_world()?.is_some() {
+                            cmd::transition(Modal::message(
+                                State::clone(this),
+                                "Info",
+                                "Saving succesful",
+                            ))
+                        } else {
+                            cmd::none()
+                        }
                     }),
                 ),
             ]
@@ -133,11 +136,7 @@ impl WorldEditor {
         }
     }
 
-    pub fn for_worlds_menu(world: Option<&WorldDescription>) -> Self {
-        // if wold_is some, we're editing an exisiting world,
-        // and overwriting is OK, if it's none, we edit a new
-        // world, and overwriting is not ok
-        let exists_ok = world.is_some();
+    pub fn for_worlds_menu(world: Option<(PathBuf, &WorldDescription)>) -> Self {
         let buttons = [
             (
                 "Abort".to_string(),
@@ -146,32 +145,30 @@ impl WorldEditor {
             (
                 "Save".to_string(),
                 an(move |this, _| {
-                    this.try_save_world(exists_ok)?;
-                    cmd::transition(Modal::message(
-                        State::clone(this),
-                        "Info",
-                        "Saving succesful",
-                    ))
+                    if this.try_save_world()?.is_some() {
+                        cmd::transition(Modal::message(
+                            State::clone(this),
+                            "Info",
+                            "Saving succesful",
+                        ))
+                    } else {
+                        cmd::none()
+                    }
                 }),
             ),
             (
                 "Save and Play".to_string(),
                 an(move |this, _| {
-                    let world = this.try_save_world(exists_ok)?;
+                    let Some(world) = this.try_save_world()? else {
+                        return cmd::none();
+                    };
                     cmd::transition(StartNewGame::new(world))
-                }),
-            ),
-            (
-                "Export Markdown".to_string(),
-                an(|this, _| {
-                    this.try_export_markdown()?;
-                    cmd::none()
                 }),
             ),
         ]
         .into();
 
-        if let Some(wd) = world {
+        if let Some((path, wd)) = world {
             Self {
                 name: wd.name.clone(),
                 description: text_editor::Content::with_text(&wd.main_description),
@@ -190,6 +187,7 @@ impl WorldEditor {
                     })
                     .collect(),
                 editing_character_name: None,
+                current_file_path: Some(path),
                 buttons,
             }
         } else {
@@ -199,21 +197,35 @@ impl WorldEditor {
                 init_action: text_editor::Content::default(),
                 characters: BTreeMap::new(),
                 editing_character_name: None,
+                current_file_path: None,
                 buttons,
             }
         }
     }
 
-    fn try_save_world(&self, exists_ok: bool) -> Result<WorldDescription> {
-        let path = self.current_save_path()?;
-        ensure!(
-            exists_ok || !path.exists(),
-            "A world with that name alread exists"
-        );
+    fn try_save_world(&mut self) -> Result<Option<WorldDescription>> {
+        let path = if let Some(path) = self.current_file_path.clone() {
+            path
+        } else if let Some(path) = self.choose_save_path() {
+            path
+        } else {
+            return Ok(None);
+        };
         let world = self.mk_world();
         fs::create_dir_all(path.parent().unwrap())?;
-        save_ron_file(&path, &world)?;
-        Ok(world)
+        fs::write(&path, world_to_markdown(&world))?;
+        self.current_file_path = Some(path.clone());
+        let mut remembered = load_remembered_worlds()?;
+        if let Some(existing) = remembered.iter_mut().find(|world| world.path == path) {
+            existing.last_known_name = world.name.clone();
+        } else {
+            remembered.push(RememberedWorld {
+                path,
+                last_known_name: world.name.clone(),
+            });
+        }
+        save_remembered_worlds(&remembered)?;
+        Ok(Some(world))
     }
 
     fn mk_world(&self) -> WorldDescription {
@@ -237,8 +249,21 @@ impl WorldEditor {
         }
     }
 
-    fn current_save_path(&self) -> Result<PathBuf> {
-        Ok(worlds_dir()?.join(self.name.replace(" ", "_") + ".ron"))
+    fn choose_save_path(&self) -> Option<PathBuf> {
+        let default_filename = self.default_filename();
+        rfd::FileDialog::new()
+            .set_file_name(&default_filename)
+            .add_filter("World Weaver worlds", &["ww.md"])
+            .add_filter("Markdown", &["md"])
+            .save_file()
+    }
+
+    fn default_filename(&self) -> String {
+        if self.name.trim().is_empty() {
+            "world.ww.md".to_string()
+        } else {
+            format!("{}.ww.md", self.name.replace(" ", "_"))
+        }
     }
 
     fn try_save_world_to_context(&mut self, ctx: &mut Context) -> Result<()> {
@@ -248,27 +273,6 @@ impl WorldEditor {
 
         gctx.upate_world_description(self.mk_world())?;
         Ok(())
-    }
-
-    fn try_export_markdown(&self) -> Result<()> {
-        let default_filename = if self.name.trim().is_empty() {
-            "world.md".to_string()
-        } else {
-            format!("{}.md", self.name.replace(" ", "_"))
-        };
-        let Some(path) = rfd::FileDialog::new()
-            .set_file_name(&default_filename)
-            .add_filter("Markdown", &["md"])
-            .save_file()
-        else {
-            return Ok(());
-        };
-        fs::write(path, self.to_markdown())?;
-        Ok(())
-    }
-
-    fn to_markdown(&self) -> String {
-        world_to_markdown(&self.mk_world())
     }
 
     fn begin_edit_character_name(&mut self, name: String) {
@@ -487,7 +491,7 @@ impl State for WorldEditor {
                     container(row(button_row).spacing(10).width(Length::Fill)).padding(10)
                 ]
                 .height(Length::Fill)
-                .width(Length::Fill)
+                .width(Length::Fill),
             )
             .padding(20)
             .max_width(800),

@@ -5,8 +5,9 @@ use color_eyre::{Result, eyre::eyre};
 use engine::{
     game::{TurnInput, WorldDescription},
     save_archive::SaveArchive,
-    world_markdown::world_to_markdown,
+    world_markdown::{world_from_markdown, world_to_markdown},
 };
+use serde::Deserialize;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -52,15 +53,10 @@ fn print_active_game_request() -> Result<()> {
 fn export_worlds_markdown(target_dir: &Path) -> Result<()> {
     fs::create_dir_all(target_dir)?;
 
-    for entry in fs::read_dir(worlds_dir()?)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("ron") {
-            continue;
-        }
-
+    for remembered in load_remembered_worlds()? {
+        let path = remembered.path;
         let src = fs::read_to_string(&path)?;
-        let world: WorldDescription = ron::from_str(&src)?;
+        let world: WorldDescription = world_from_markdown(&src)?;
         let output_name = path
             .file_stem()
             .ok_or(eyre!("World file without file stem: {path:?}"))?;
@@ -77,10 +73,24 @@ pub fn data_dir() -> Result<PathBuf> {
         .join("World Weaver"))
 }
 
-pub fn worlds_dir() -> Result<PathBuf> {
-    Ok(data_dir()?.join("worlds"))
+pub fn remembered_worlds_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("remembered_worlds.ron"))
 }
 
 pub fn active_game_save_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("active_game"))
+}
+
+fn load_remembered_worlds() -> Result<Vec<RememberedWorld>> {
+    let path = remembered_worlds_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let src = fs::read_to_string(path)?;
+    Ok(ron::from_str(&src)?)
+}
+
+#[derive(Debug, Deserialize)]
+struct RememberedWorld {
+    path: PathBuf,
 }
