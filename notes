@@ -1,111 +1,48 @@
-Price on glm was 30cents for 25 turns/1.5h (before the caching change)
-turn length varies and gets longer up to a certain point. Best comparison
-would be a new game to turn 25 again. Timed
+# Portable Mode / Distribution
 
+Worlds and saves are now file-backed and manually opened, so the remaining
+distribution idea is a proper portable mode.
 
-credits before starting the new evaluation round: 9.27
-played 21 turns. Much shorter. 30min. Current balance: 9.15
-so far this looks like 24cents per hour. which is
-even more expensive than before. However, I don't know for
-sure which provider was used
+Desired shape:
 
-# World Files / Saves / Distribution
+- if config/data live next to the executable, use those instead of the normal
+  OS config/data dirs
+- that makes it possible to hand out a zip that is basically:
+  - binary
+  - config next to it
+  - worlds next to it
+  - maybe saves next to it
+- this should be a portable mode, not the only mode
 
-Worlds should probably be treated more like documents than like internal app
-state. Saves are also files of course, just a different kind. A world is the
-definition/template, a save is a playthrough.
+That would make "easy customization" and private themed distributions much
+cleaner without inventing a separate bundle format.
 
-I still think the app can have a worlds menu / recent worlds / maybe a worlds
-dir, but the important part is that a world should be a thing a user can move
-around, share, rename, back up etc without it feeling like they are poking at
-app internals.
+# World Structure
 
-So:
+The current "character" model is still too weak for how the editor is really
+used.
 
-- world file: portable world definition
-- save file: one run through a world, including images etc
-
-`New world` should not open a file picker first. It should just open the editor.
-The file path should only matter on save.
-
-`Start game` should usually happen from a selected/opened world, not from a
-file picker.
-
-`Open world...` / `Open save...` are the places where file dialogs make sense.
-
-If a remembered/recent world got moved, it should just show up as missing.
-Then there can be a `Locate file...` option etc. No need to be overly clever
-about it.
-
-There is also the portable / easy-customization idea:
-
-- binary
-- config next to it
-- worlds dir next to it
-
-Then a "bundle" is basically just such a directory zipped up. That is actually
-quite nice. But it should probably be a portable mode, not the only mode. If
-there is config/data next to the executable, use that. Otherwise use the normal
-OS data/config dirs.
-
-# World Name / File Name
-
-The displayed world name should not come from the file name. That feels wrong.
-I don't want `cyber_runner` to be the displayed title just because that is a
-reasonable file name.
-
-The world title should be stored in the file and displayed from there.
-
-The file name can still be derived from the title by default. That part is
-fine. But then on rename, the file should usually also get renamed, instead of
-the current behavior where changing the title effectively creates a new file
-and leaves the old one behind.
-
-Probably:
-
-- title is the canonical displayed name
-- filename/slug is derived from it by default
-- when editing an existing world and the title changes, also rename the file
-- if that would conflict, ask what to do instead of silently overwriting
-
-Might make sense to only auto-rename if the current file name still matches the
-old derived slug. That way we don't fight a user who intentionally chose some
-different file name.
-
-# World Structure / Variants / Blocks
-
-The current "character section" model is too weak for what I actually use it
-for. I often abuse it to create subvariants that differ in more than just the
-player character.
-
-There are also chunks of the world description that I want in many variants,
-but not all. Right now the bad options are:
-
-- keep them in the main description and tell the model to ignore them in some
-  character sections
-- or duplicate the same text into all relevant sections
-
-Both are bad in different ways.
-
-I think the better model is to stop pretending these are just character
-sections and make the structure explicit:
+What is needed instead:
 
 - world blocks: reusable chunks of description
 - variants: named setups / subvariants that include some blocks and add their
   own text
-- player characters: actual character descriptions/start states
+- player characters: actual character descriptions / starting states
 
-Then a variant could select which main blocks are active, instead of forcing
-manual duplication or "ignore this" prose hacks.
+This should replace the current abuse where "characters" are often really
+scenario variants.
 
-This is more complex, yes, but the current hidden complexity is worse.
-Important part is that the UI should not dump the whole model on normal users
-at once.
+Why this is needed:
 
-Probably the right shape is:
+- some chunks of description belong in many variants, but not all
+- the current alternatives are both bad:
+  - duplicate the same text into many sections
+  - or keep it in the main description and tell the model to ignore parts of
+    it in some cases
 
-- simple default editing flow
-- blocks / composition visible as a more explicit advanced structure
+Important UX constraint:
 
-What I do *not* want is to keep calling these things "characters" when they are
-really scenario/subvariant definitions.
+- the data model can be more explicit, but the editor should not dump all of
+  that complexity on normal users at once
+- the basic editing flow should stay simple
+- blocks / composition can be exposed as a more explicit advanced structure

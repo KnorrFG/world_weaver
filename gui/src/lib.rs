@@ -143,12 +143,12 @@ pub fn data_dir() -> Result<PathBuf> {
         .join(APP_NAME))
 }
 
-pub fn saves_dir() -> Result<PathBuf> {
-    Ok(data_dir()?.join("saves"))
-}
-
 pub fn remembered_worlds_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("remembered_worlds.ron"))
+}
+
+pub fn remembered_saves_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("remembered_saves.ron"))
 }
 
 pub fn styles_dir() -> Result<PathBuf> {
@@ -161,8 +161,8 @@ pub fn config_path() -> Result<PathBuf> {
         .join("world_weaver.ron"))
 }
 
-pub fn active_game_save_path() -> Result<PathBuf> {
-    Ok(data_dir()?.join("active_game"))
+pub fn active_game_save_path_ref_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("active_game_save_path.ron"))
 }
 
 pub fn load_config() -> Result<Option<Config>> {
@@ -198,6 +198,34 @@ pub fn save_remembered_worlds(worlds: &[RememberedWorld]) -> Result<()> {
     let path = remembered_worlds_path()?;
     fs::create_dir_all(path.parent().ok_or(eyre!("remembered worlds path has no parent"))?)?;
     save_ron_file(&path, &worlds)
+}
+
+pub fn load_remembered_saves() -> Result<Vec<PathBuf>> {
+    let path = remembered_saves_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    load_ron_file(&path)
+}
+
+pub fn save_remembered_saves(saves: &[PathBuf]) -> Result<()> {
+    let path = remembered_saves_path()?;
+    fs::create_dir_all(path.parent().ok_or(eyre!("remembered saves path has no parent"))?)?;
+    save_ron_file(&path, &saves)
+}
+
+pub fn load_active_game_save_path() -> Result<Option<PathBuf>> {
+    let path = active_game_save_path_ref_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    load_ron_file(&path).map(Some)
+}
+
+pub fn save_active_game_save_path(path: &Path) -> Result<()> {
+    let ref_path = active_game_save_path_ref_path()?;
+    fs::create_dir_all(ref_path.parent().ok_or(eyre!("active save path has no parent"))?)?;
+    save_ron_file(&ref_path, &path.to_path_buf())
 }
 
 macro_rules! elem_list {

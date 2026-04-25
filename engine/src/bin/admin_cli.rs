@@ -37,7 +37,9 @@ pub fn main() -> Result<()> {
 }
 
 fn print_active_game_request() -> Result<()> {
-    let mut archive = SaveArchive::open(active_game_save_path()?)?;
+    let save_path = load_active_game_save_path()?
+        .ok_or(eyre!("No active save path stored in the state dir"))?;
+    let mut archive = SaveArchive::open(save_path)?;
     let data = archive.read_game_data()?;
     let request = data.construct_request(&TurnInput::default(), "");
 
@@ -77,8 +79,17 @@ pub fn remembered_worlds_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("remembered_worlds.ron"))
 }
 
-pub fn active_game_save_path() -> Result<PathBuf> {
-    Ok(data_dir()?.join("active_game"))
+pub fn active_game_save_path_ref_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("active_game_save_path.ron"))
+}
+
+pub fn load_active_game_save_path() -> Result<Option<PathBuf>> {
+    let path = active_game_save_path_ref_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let src = fs::read_to_string(path)?;
+    Ok(Some(ron::from_str(&src)?))
 }
 
 fn load_remembered_worlds() -> Result<Vec<RememberedWorld>> {

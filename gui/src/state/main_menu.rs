@@ -1,21 +1,18 @@
-use std::fs;
-
 use color_eyre::Result;
+use engine::save_archive::SaveArchive;
 use iced::{
-    Length, Task,
+    Length,
     alignment::Horizontal,
     widget::{button, column, container},
 };
 
 use crate::{
-    State, TryIntoExt, active_game_save_path,
+    State, TryIntoExt, load_active_game_save_path,
     context::Context,
     elem_list,
     message::{UiMessage, ui_messages::MainMenu as MyMessage},
-    saves_dir,
     state::{
-        self, Modal, Playing, StateCommand, WorldEditor, cmd, load_menu::LoadMenu,
-        options_menu::OptionsMenu,
+        self, Playing, StateCommand, WorldEditor, cmd, load_menu::LoadMenu, options_menu::OptionsMenu,
     },
 };
 
@@ -27,7 +24,13 @@ pub struct MainMenu {
 impl MainMenu {
     pub fn try_new() -> Result<Self> {
         Ok(MainMenu {
-            active_game_exists: active_game_save_path()?.exists(),
+            active_game_exists: load_active_game_save_path()?
+                .map(|path| {
+                    SaveArchive::open(&path)
+                        .and_then(|mut archive| archive.read_game_data().map(|_| ()))
+                        .is_ok()
+                })
+                .unwrap_or(false),
         })
     }
 }
@@ -55,27 +58,6 @@ impl State for MainMenu {
                 cmd::transition(state::start_new_game::StartNewGame::new(world))
             }
             WorldsMenu => cmd::transition(state::WorldMenu::try_new()?),
-            SaveButton => cmd::transition(Modal::input(
-                State::clone(self),
-                "Save name",
-                "Save name",
-                |s| Task::done(Save(s).into()),
-            )),
-            Save(save_name) => {
-                let save_dir = saves_dir()?;
-                fs::create_dir_all(&save_dir)?;
-                let save_path = save_dir.join(&save_name);
-                if let Some(gctx) = &mut ctx.game {
-                    gctx.save.write_to(&save_path)?;
-                } else {
-                    fs::copy(active_game_save_path()?, save_path)?;
-                }
-                cmd::transition(Modal::message(
-                    State::clone(self),
-                    "Info",
-                    "Saving Successful",
-                ))
-            }
             Load => cmd::transition(LoadMenu::try_new()?),
             Options => cmd::transition(OptionsMenu::new(&ctx.config)?),
             EditActiveWorld => {
@@ -100,9 +82,6 @@ impl State for MainMenu {
                     .width(button_w),
                 button("Restart current world")
                     .on_press(MyMessage::RestartCurrentWorld.into())
-                    .width(button_w),
-                button("Save")
-                    .on_press(MyMessage::SaveButton.into())
                     .width(button_w),
                 button("Edit active world")
                     .on_press(MyMessage::EditActiveWorld.into())

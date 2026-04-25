@@ -9,7 +9,8 @@ use iced::{
 };
 
 use crate::{
-    Config, TryIntoExt, active_game_save_path, bold_default_font,
+    Config, TryIntoExt, bold_default_font, load_remembered_saves,
+    save_active_game_save_path, save_remembered_saves,
     context::{Context, game_context::GameContext},
     elem_list,
     message::{ContextMessage, Message, UiMessage, ui_messages::StartNewGame as MyMessage},
@@ -38,6 +39,13 @@ impl StartNewGame {
             config.active_style().cloned(),
         )
     }
+
+    fn default_save_filename(&self, character: &str) -> String {
+        let basename = format!("{}_{}", self.world.name, character)
+            .replace(' ', "_")
+            .to_lowercase();
+        format!("{basename}.wwsave")
+    }
 }
 
 impl State for StartNewGame {
@@ -45,10 +53,26 @@ impl State for StartNewGame {
         use MyMessage::*;
         match event.try_into_ex()? {
             Selected(c) => {
+                let Some(path) = rfd::FileDialog::new()
+                    .add_filter("World Weaver saves", &["wwsave"])
+                    .set_file_name(self.default_save_filename(&c))
+                    .save_file()
+                else {
+                    return cmd::none();
+                };
+
                 ctx.game = None;
                 let game = self.create_game(c, &ctx.config)?;
-                let archive = SaveArchive::create(active_game_save_path()?)?;
+                let archive = SaveArchive::create(&path)?;
                 ctx.game = Some(GameContext::try_new(game, archive)?);
+
+                let mut remembered_saves = load_remembered_saves()?;
+                if !remembered_saves.contains(&path) {
+                    remembered_saves.push(path.clone());
+                    save_remembered_saves(&remembered_saves)?;
+                }
+                save_active_game_save_path(&path)?;
+
                 cmd::transition_with_task::<Message>(
                     Playing::new(),
                     Task::done(ContextMessage::Init.into()),

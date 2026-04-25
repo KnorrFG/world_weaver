@@ -115,8 +115,6 @@ pub mod ui_messages {
             RestartCurrentWorld,
             WorldsMenu,
             Options,
-            SaveButton,
-            Save(String),
             Load,
             EditActiveWorld,
         }
@@ -152,8 +150,8 @@ pub mod ui_messages {
 
         pub enum LoadMenu {
             Back,
-            DeleteSave(usize),
-            ConfirmDeleteSave(usize),
+            OpenSave,
+            ForgetSave(usize),
             LoadSave(usize),
         }
 

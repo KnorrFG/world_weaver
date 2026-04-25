@@ -4,75 +4,96 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use color_eyre::{Result, eyre::eyre};
+use color_eyre::Result;
 use iced::{
     Length,
-    widget::{Space, button, column, row, space, text},
+    widget::{Space, button, column, row, space, text, tooltip},
 };
 use log::debug;
 
 use crate::{
-    TryIntoExt, active_game_save_path, bold_text, elem_list,
+    TryIntoExt, bold_text, elem_list, load_remembered_saves,
     message::ui_messages::LoadMenu as MyMessage,
-    saves_dir,
-    state::{MainMenu, Modal, Playing, State, cmd},
+    save_active_game_save_path, save_remembered_saves,
+    state::{MainMenu, Playing, State, cmd},
     top_level_container,
 };
 
 #[derive(Clone, Debug)]
 pub struct LoadMenu {
-    saves: Vec<SaveEntry>,
+    saves: Vec<RememberedSaveEntry>,
 }
 
 #[derive(Clone, Debug)]
-struct SaveEntry {
-    filename: String,
+struct RememberedSaveEntry {
     path: PathBuf,
-    modified: SystemTime,
+    modified: Option<SystemTime>,
+}
+
+impl RememberedSaveEntry {
+    fn filename(&self) -> String {
+        self.path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("<invalid file name>")
+            .to_string()
+    }
 }
 
 impl LoadMenu {
     pub fn try_new() -> Result<Self> {
-        let dir = saves_dir()?;
-        debug!("Save-files (in {dir:?}):");
+        let mut saves = load_remembered_saves()?
+            .into_iter()
+            .map(|path| RememberedSaveEntry {
+                modified: fs::metadata(&path).and_then(|x| x.modified()).ok(),
+                path,
+            })
+            .collect::<Vec<_>>();
 
-        let mut saves = Vec::new();
+        saves.sort_by_key(|save| std::cmp::Reverse(save.modified));
 
-        if dir.exists() {
-            for entry in fs::read_dir(dir)? {
-                let entry = entry?;
-                let path = entry.path();
-
-                if !path.is_file() {
-                    continue;
-                }
-
-                let meta = entry.metadata()?;
-                let modified = meta.modified()?;
-
-                let filename = path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .ok_or(eyre!("invalid file name"))?
-                    .to_string();
-
-                debug!("{filename}");
-                saves.push(SaveEntry {
-                    filename,
-                    path,
-                    modified,
-                });
-            }
-        }
-
-        // newest first
-        saves.sort_by_key(|s| std::cmp::Reverse(s.modified));
+        debug!(
+            "Remembered saves:\n{}",
+            saves
+                .iter()
+                .map(|save| format!("{} -> {:?}", save.filename(), save.path))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
 
         Ok(Self { saves })
     }
+
+    fn write_remembered_saves_index(&self) -> Result<()> {
+        let remembered: Vec<_> = self.saves.iter().map(|save| save.path.clone()).collect();
+        save_remembered_saves(&remembered)
+    }
+
+    fn open_save_via_dialog(&mut self) -> Result<Option<PathBuf>> {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("World Weaver saves", &["wwsave"])
+            .pick_file()
+        else {
+            return Ok(None);
+        };
+        let modified = fs::metadata(&path).ok().and_then(|m| m.modified().ok());
+
+        if let Some(existing) = self.saves.iter_mut().find(|save| save.path == path) {
+            existing.modified = modified;
+        } else {
+            self.saves.push(RememberedSaveEntry {
+                path: path.clone(),
+                modified,
+            });
+            self.write_remembered_saves_index()?;
+        }
+        self.saves
+            .sort_by_key(|save| std::cmp::Reverse(save.modified));
+        Ok(Some(path))
+    }
 }
 
-impl super::State for LoadMenu {
+impl State for LoadMenu {
     fn update(
         &mut self,
         event: crate::message::UiMessage,
@@ -82,24 +103,24 @@ impl super::State for LoadMenu {
         use MyMessage::*;
 
         match msg {
+            OpenSave => {
+                let Some(path) = self.open_save_via_dialog()? else {
+                    return cmd::none();
+                };
+                ctx.load_game_from_path(&path)?;
+                save_active_game_save_path(&path)?;
+                cmd::transition(Playing::new())
+            }
             LoadSave(i) => {
                 let save = &self.saves[i];
-                ctx.game = None;
-                let active_game_path = active_game_save_path()?;
-                fs::copy(&save.path, &active_game_path)?;
-                ctx.load_game()?;
+                ctx.load_game_from_path(&save.path)?;
+                save_active_game_save_path(&save.path)?;
                 cmd::transition(Playing::new())
             }
             Back => cmd::transition(MainMenu::try_new()?),
-            DeleteSave(i) => cmd::transition(Modal::confirm(
-                State::clone(self),
-                "Do you really want to delete this save?",
-                Some(MyMessage::ConfirmDeleteSave(i).into()),
-                None,
-            )),
-            ConfirmDeleteSave(i) => {
-                let save = &self.saves.remove(i);
-                fs::remove_file(&save.path)?;
+            ForgetSave(i) => {
+                self.saves.remove(i);
+                self.write_remembered_saves_index()?;
                 cmd::none()
             }
         }
@@ -114,20 +135,52 @@ impl super::State for LoadMenu {
             Space::new().height(30),
             row![
                 space::horizontal(),
+                button("Open...").on_press(MyMessage::OpenSave.into()),
                 button("Back").on_press(MyMessage::Back.into()),
                 space::horizontal()
             ]
+            .spacing(10)
         ]);
 
         for (i, save) in self.saves.iter().enumerate() {
-            let time = format_system_time_utc(save.modified);
+            let is_available = save.path.exists();
+            let warning: iced::Element<'_, crate::message::UiMessage> = if is_available {
+                Space::new()
+                    .width(Length::Shrink)
+                    .height(Length::Shrink)
+                    .into()
+            } else {
+                tooltip(
+                    text("⚠"),
+                    "This save file is missing or unreadable.",
+                    tooltip::Position::Top,
+                )
+                .into()
+            };
+
+            let time = save
+                .modified
+                .map(format_system_time_utc)
+                .unwrap_or_else(|| "<unavailable>".to_string());
+
+            let load_button = if is_available {
+                button("Load").on_press(MyMessage::LoadSave(i).into())
+            } else {
+                button("Load")
+            };
 
             tlc.push(
                 row![
-                    column![text(&save.filename), text(time.to_string()).size(14)],
+                    warning,
+                    column![
+                        text(save.filename()),
+                        text(save.path.display().to_string()).size(14),
+                        text(time).size(14)
+                    ]
+                    .spacing(4),
                     space::horizontal(),
-                    button("Delete").on_press(MyMessage::DeleteSave(i).into()),
-                    button("Load").on_press(MyMessage::LoadSave(i).into())
+                    button("forget").on_press(MyMessage::ForgetSave(i).into()),
+                    load_button
                 ]
                 .spacing(10)
                 .into(),
@@ -143,7 +196,7 @@ impl super::State for LoadMenu {
         .into()
     }
 
-    fn clone(&self) -> Box<dyn super::State> {
+    fn clone(&self) -> Box<dyn State> {
         Box::new(Clone::clone(self))
     }
 }
@@ -154,7 +207,6 @@ fn format_system_time_utc(t: SystemTime) -> String {
         Err(_) => return "<invalid time>".into(),
     };
 
-    // Manual UTC conversion
     const SECS_PER_MIN: u64 = 60;
     const SECS_PER_HOUR: u64 = 60 * SECS_PER_MIN;
     const SECS_PER_DAY: u64 = 24 * SECS_PER_HOUR;
@@ -166,7 +218,6 @@ fn format_system_time_utc(t: SystemTime) -> String {
     let min = (secs_of_day % SECS_PER_HOUR) / SECS_PER_MIN;
     let sec = secs_of_day % SECS_PER_MIN;
 
-    // Gregorian calendar conversion (UTC)
     let (year, month, day) = days_to_ymd(days as i64);
 
     format!(
@@ -175,18 +226,12 @@ fn format_system_time_utc(t: SystemTime) -> String {
     )
 }
 
-/// Converts days since Unix epoch to (year, month, day)
 fn days_to_ymd(mut days: i64) -> (i32, u32, u32) {
     let mut year = 1970;
 
-    loop {
-        let days_in_year = if is_leap(year) { 366 } else { 365 };
-        if days >= days_in_year {
-            days -= days_in_year;
-            year += 1;
-        } else {
-            break;
-        }
+    while days >= if is_leap(year) { 366 } else { 365 } {
+        days -= if is_leap(year) { 366 } else { 365 };
+        year += 1;
     }
 
     let month_days = [
@@ -205,13 +250,12 @@ fn days_to_ymd(mut days: i64) -> (i32, u32, u32) {
     ];
 
     let mut month = 0;
-    for &d in &month_days {
-        if days >= d {
-            days -= d;
-            month += 1;
-        } else {
+    for &month_len in &month_days {
+        if days < month_len {
             break;
         }
+        days -= month_len;
+        month += 1;
     }
 
     (year, (month + 1) as u32, (days + 1) as u32)

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path};
 
 use color_eyre::{
     Result,
@@ -16,7 +16,7 @@ use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    active_game_save_path,
+    load_active_game_save_path,
     context::game_context::GameContext,
     message::{ContextMessage, Message},
 };
@@ -42,13 +42,17 @@ impl Context {
     }
 
     pub fn load_game(&mut self) -> Result<&Game> {
-        self.game = None;
-        let save_path = active_game_save_path()?;
+        let save_path = load_active_game_save_path()?
+            .ok_or(eyre!("No game running. Please start a new one via the New Game flow"))?;
         ensure!(
             save_path.exists(),
-            "No game running. Please start a new one via the NewGame command"
+            "No game running. Please start a new one via the New Game flow"
         );
+        self.load_game_from_path(&save_path)
+    }
 
+    pub fn load_game_from_path(&mut self, save_path: &Path) -> Result<&Game> {
+        self.game = None;
         debug!("Loading save: {save_path:?}");
         let mut archive = SaveArchive::open(save_path)?;
         let game_data = archive.read_game_data()?;
