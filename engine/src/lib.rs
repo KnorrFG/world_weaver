@@ -8,3 +8,4 @@ pub mod game;
 pub mod image_model;
 pub mod llm;
 pub mod save_archive;
+pub mod world_markdown;

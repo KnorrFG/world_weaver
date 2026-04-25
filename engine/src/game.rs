@@ -767,7 +767,7 @@ Night Watch
     }
 
     #[test]
-    fn request_context_keeps_three_turns_before_latest_summary() {
+    fn request_context_keeps_two_turns_before_latest_summary() {
         let data = GameData {
             world_description: WorldDescription {
                 name: String::new(),
@@ -783,7 +783,7 @@ Night Watch
             turn_data: vec![],
         };
 
-        assert_eq!(data.request_context_start(), 7);
+        assert_eq!(data.request_context_start(), 8);
     }
 }
 

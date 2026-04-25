@@ -18,6 +18,7 @@ use color_eyre::{
     eyre::{bail, ensure, eyre},
 };
 use engine::game::{PcDescription, WorldDescription};
+use engine::world_markdown::world_to_markdown;
 use iced::{
     Color, Font, Length, Task, padding,
     widget::{
@@ -120,6 +121,13 @@ impl WorldEditor {
                         ))
                     }),
                 ),
+                (
+                    "Export Markdown".to_string(),
+                    an(|this, _| {
+                        this.try_export_markdown()?;
+                        cmd::none()
+                    }),
+                ),
             ]
             .into(),
         }
@@ -151,6 +159,13 @@ impl WorldEditor {
                 an(move |this, _| {
                     let world = this.try_save_world(exists_ok)?;
                     cmd::transition(StartNewGame::new(world))
+                }),
+            ),
+            (
+                "Export Markdown".to_string(),
+                an(|this, _| {
+                    this.try_export_markdown()?;
+                    cmd::none()
                 }),
             ),
         ]
@@ -233,6 +248,27 @@ impl WorldEditor {
 
         gctx.upate_world_description(self.mk_world())?;
         Ok(())
+    }
+
+    fn try_export_markdown(&self) -> Result<()> {
+        let default_filename = if self.name.trim().is_empty() {
+            "world.md".to_string()
+        } else {
+            format!("{}.md", self.name.replace(" ", "_"))
+        };
+        let Some(path) = rfd::FileDialog::new()
+            .set_file_name(&default_filename)
+            .add_filter("Markdown", &["md"])
+            .save_file()
+        else {
+            return Ok(());
+        };
+        fs::write(path, self.to_markdown())?;
+        Ok(())
+    }
+
+    fn to_markdown(&self) -> String {
+        world_to_markdown(&self.mk_world())
     }
 
     fn begin_edit_character_name(&mut self, name: String) {
